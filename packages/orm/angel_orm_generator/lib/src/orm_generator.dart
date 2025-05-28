@@ -627,6 +627,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
   /// Generate <Model>QueryWhere class
   Class buildWhereClass(OrmBuildContext ctx) {
     return Class((clazz) {
+
+      print("I use Modified ORM GENERATOR ");
       var rc = ctx.buildContext.modelClassNameRecase;
 
       log.info('Generating ${rc.pascalCase}QueryWhere');
