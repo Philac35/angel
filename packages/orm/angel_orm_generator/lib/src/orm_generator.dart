@@ -466,10 +466,10 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                   var queryInstantiation = foreignQueryType.newInstance(
                       [],
                       <String, Expression>{} ,    //Mofification 30/05/2025 11h42 use {} instead of []
-                      {
-                        'trampoline': refer('trampoline'),
-                        'parent': refer('this')
-                      } as List<Reference>);
+                      [
+                        refer('trampoline'),
+                         refer('this')
+                      ] );  //Modifiy {trampoline:refer['trampoline'] ... } as List<Reference>) by [ ... ]  30/05/2025 12h49
                   joinArgs.insert(
                       0, refer('_$fieldName').assign(queryInstantiation));
                 }
