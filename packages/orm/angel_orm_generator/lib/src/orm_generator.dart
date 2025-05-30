@@ -1,891 +1,435 @@
+
+
 //Orm_generator, File modified 28/05/2025 10h58
 //It manages only named parameters
 
-import 'dart:async';
 
+
+import 'dart:async';
+import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:angel3_model/angel3_model.dart';
 import 'package:angel3_orm/angel3_orm.dart';
 import 'package:angel3_serialize/angel3_serialize.dart';
-import 'package:angel3_serialize_generator/angel3_serialize_generator.dart';
 import 'package:build/build.dart';
-import 'package:code_builder/code_builder.dart' hide LibraryBuilder;
+import 'package:code_builder/code_builder.dart';
+import 'package:dart_style/dart_style.dart';
+import 'package:inflection3/inflection3.dart';
+import 'package:recase/recase.dart';
 import 'package:source_gen/source_gen.dart';
+import 'package:angel3_serialize_generator/angel3_serialize_generator.dart';
 
+import 'package:code_builder/code_builder.dart' as libuilder;
+
+import 'package:pub_semver/pub_semver.dart';
 import 'orm_build_context.dart';
+// New annotation to configure parameter style
+class OrmParameterStyle {
+  final bool useNamedParameters;
+  const OrmParameterStyle({this.useNamedParameters = true});
+}
 
-var floatTypes = [
-  ColumnType.decimal,
-  ColumnType.float,
-  ColumnType.numeric,
-  ColumnType.real,
-  const ColumnType('double precision'),
-];
+// Alternative: you can also use this in build.yaml configuration
+class OrmConfig {
+  final bool useNamedParameters;
+  const OrmConfig({this.useNamedParameters = true});
+}
 
-/// ORM Builder
-Builder ormBuilder(BuilderOptions options) {
+Builder angel3OrmBuilder(BuilderOptions options) {
   return SharedPartBuilder([
-    OrmGenerator(
-        autoSnakeCaseNames: options.config['auto_snake_case_names'] != false)
+    Angel3OrmGenerator(options),
   ], 'angel3_orm');
 }
 
-TypeReference futureOf(String type) {
-  return TypeReference((b) => b
-    ..symbol = 'Future'
-    ..types.add(refer(type)));
-}
+class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
+  static final RegExp _startWithUnderscore = RegExp(r'^_+');
+  final BuilderOptions builderOptions;
 
-/// Generate `<Model>.g.dart` from an abstract `Model` class.
-class OrmGenerator extends GeneratorForAnnotation<Orm> {
-  final bool? autoSnakeCaseNames;
-
-  OrmGenerator({this.autoSnakeCaseNames});
+  Angel3OrmGenerator([this.builderOptions = const BuilderOptions({})]);
 
   @override
   Future<String> generateForAnnotatedElement(
-      Element element, ConstantReader annotation, BuildStep buildStep) async {
-    if (element is ClassElement) {
-      var ctx = await buildOrmContext({}, element, annotation, buildStep,
-          buildStep.resolver, autoSnakeCaseNames);
-      if (ctx == null) {
-        throw 'Invalid ORM build context';
+      Element element,
+      ConstantReader annotation,
+      BuildStep buildStep,
+      ) async {
+    if (element is! ClassElement) {
+      throw InvalidGenerationSourceError(
+        '@Orm() can only be applied to classes.',
+        element: element,
+      );
+    }
+
+    var lib = Library((b) {
+      try {
+        generateOrmCode(element, annotation, b);
+      } catch (e, st) {
+        print('Error generating ORM code for ${element.name}: $e');
+        print('Stack trace: $st');
+        rethrow;
       }
+    });
 
-      var lib = buildOrmLibrary(buildStep.inputId, ctx);
+    var buf = StringBuffer();
+    var emitter = DartEmitter();
+    lib.accept(emitter, buf);
 
-      return lib.accept(DartEmitter(useNullSafetySyntax: true)).toString();
-    } else {
-      throw 'The @Orm() annotation can only be applied to classes.';
+    try {
+
+      return DartFormatter(languageVersion: Version.parse ('3.7.2') ).format(buf.toString());
+    } catch (e) {
+      print('Failed to format generated code:');
+      print(buf.toString());
+      rethrow;
     }
   }
 
-  Library buildOrmLibrary(AssetId inputId, OrmBuildContext ctx) {
-    return Library((lib) {
-      // Create `FooQuery` class
-      lib.body.add(buildQueryClass(ctx));
-
-      // Create `FooQueryWhere` class
-      lib.body.add(buildWhereClass(ctx));
-
-      // Create `FooQueryValues` class
-      lib.body.add(buildValuesClass(ctx));
-    });
-  }
-
-  /// Generate <Model>Query class
-  Class buildQueryClass(OrmBuildContext ctx) {
-    return Class((clazz) {
-      var rc = ctx.buildContext.modelClassNameRecase;
-      var queryWhereType = refer('${rc.pascalCase}QueryWhere');
-      log.info('Generating ${rc.pascalCase}QueryWhere');
-
-      var nullableQueryWhereType = TypeReference((b) => b
-        ..symbol = '${rc.pascalCase}QueryWhere'
-        ..isNullable = true);
-
-      clazz
-        ..name = '${rc.pascalCase}Query'
-        ..extend = TypeReference((b) {
-          b
-            ..symbol = 'Query'
-            ..types.addAll([
-              ctx.buildContext.modelClassType,
-              queryWhereType,
-            ]);
-        });
-
-      // Override casts so that we can cast doubles
-      clazz.methods.add(Method((b) {
-        b
-          ..name = 'casts'
-          ..annotations.add(refer('override'))
-          ..returns = TypeReference((b) => b
-            ..symbol = 'Map'
-            ..types.add(refer('String'))
-            ..types.add(refer('String')))
-          ..type = MethodType.getter
-          ..body = Block((b) {
-            var args = <String, Expression>{};
-            b.addExpression(literalMap(args).returned);
-          });
-      }));
-
-      // Add newWhereClause method
-      clazz.methods.add(Method((b) {
-        b
-          ..name = 'newWhereClause'
-          ..annotations.add(refer('override'))
-          ..returns = queryWhereType
-          ..body = Block((b) => b.addExpression(queryWhereType.newInstance(
-              [], {refer('query').toString(): refer('this')}).returned));
-      }));
-
-      // Add values
-      clazz.fields.add(Field((b) {
-        var type = refer('${rc.pascalCase}QueryValues');
-        b
-          ..name = 'values'
-          ..modifier = FieldModifier.final$
-          ..annotations.add(refer('override'))
-          ..type = type
-          ..assignment = type.newInstance([], {}).code;
-      }));
-
-      // Add tableName
-      clazz.methods.add(Method((m) {
-        m
-          ..name = 'tableName'
-          ..returns = refer('String')
-          ..annotations.add(refer('override'))
-          ..type = MethodType.getter
-          ..body = Block((b) {
-            b.addExpression(literalString(ctx.tableName!).returned);
-          });
-      }));
-
-      // Add fields getter
-      clazz.methods.add(Method((m) {
-        m
-          ..name = 'fields'
-          ..returns = TypeReference((b) => b
-            ..symbol = 'List'
-            ..types.add(TypeReference((b) => b..symbol = 'String')))
-          ..annotations.add(refer('override'))
-          ..type = MethodType.getter
-          ..body = Block((b) {
-            var names = ctx.effectiveFields
-                .map((f) =>
-                    literalString(ctx.buildContext.resolveFieldName(f.name)!))
-                .toList();
-            b.addExpression(
-                declareConst('_fields').assign(literalConstList(names)));
-            b.addExpression(refer('_selectedFields')
-                .property('isEmpty')
-                .conditional(
-                  refer('_fields'),
-                  refer('_fields')
-                      .property('where')
-                      .call([
-                        CodeExpression(
-                            Code('(field) => _selectedFields.contains(field)'))
-                      ])
-                      .property('toList')
-                      .call([]),
-                )
-                .returned);
-          });
-      }));
-
-      // Add _selectedFields member
-      clazz.fields.add(Field((b) {
-        b
-          ..name = '_selectedFields'
-          ..type = TypeReference((t) => t
-            ..symbol = 'List'
-            ..types.add(TypeReference((b) => b..symbol = 'String')))
-          ..assignment = Code('[]');
-      }));
-
-      // Add select(List<String> fields)
-      clazz.methods.add(Method((m) {
-        m
-          ..name = 'select'
-          ..returns = refer('${rc.pascalCase}Query')
-          ..requiredParameters.add(Parameter((b) => b
-            ..name = 'selectedFields'
-            ..type = TypeReference((t) => t
-              ..symbol = 'List'
-              ..types.add(TypeReference((b) => b..symbol = 'String')))
-            ..named = true))
-          ..body = Block((b) {
-            b.addExpression(
-              refer('_selectedFields').assign(refer('selectedFields')),
-            );
-            b.addExpression(refer('this').returned);
-          });
-      }));
-
-      // Add _where member
-      clazz.fields.add(Field((b) {
-        b
-          ..name = '_where'
-          ..type = nullableQueryWhereType;
-      }));
-
-      // Add where getter
-      clazz.methods.add(Method((b) {
-        b
-          ..name = 'where'
-          ..type = MethodType.getter
-          ..returns = nullableQueryWhereType
-          ..annotations.add(refer('override'))
-          ..body = Block((b) => b.addExpression(refer('_where').returned));
-      }));
-
-      // Add parseRow()
-      clazz.methods.add(Method((m) {
-        m
-          ..name = 'parseRow'
-          ..returns = refer('Optional<${rc.pascalCase}>')
-          ..requiredParameters.add(Parameter((b) => b
-            ..name = 'row'
-            ..type = refer('List')
-            ..named = true))
-          ..body = Block((b) {
-            var i = 0;
-            var args = <String, Expression>{};
-            for (var field in ctx.effectiveFields) {
-              var fType = field.type;
-              Reference type = convertTypeReference(fType);
-              if (isSpecialId(ctx, field)) {
-                type = refer('int');
-              }
-              var expr = refer('row').index(literalNum(i++));
-              if (isSpecialId(ctx, field)) {
-                expr = expr.property('toString').call([]);
-              } else if (field is RelationFieldImpl) {
-                continue;
-              } else if (ctx.columns[field.name]?.type == ColumnType.json) {
-                expr = refer('json')
-                    .property('decode')
-                    .call([expr.asA(refer('String'))]).asA(type);
-              } else if (floatTypes.contains(ctx.columns[field.name]?.type)) {
-                expr = refer('mapToDouble').call([expr]);
-              } else if (fType is InterfaceType &&
-                  fType.element is EnumElement) {
-                var isNull = expr.equalTo(literalNull);
-                final parseExpression = _deserializeEnumExpression(field, expr);
-                expr = isNull.conditional(literalNull, parseExpression);
-              } else if (fType.isDartCoreInt) {
-                expr = refer('mapToInt').call([expr]);
-              } else if (fType.isDartCoreBool) {
-                expr = refer('mapToBool').call([expr]);
-              } else if (fType.element?.displayName == 'DateTime') {
-                if (fType.nullabilitySuffix == NullabilitySuffix.question) {
-                  expr = refer('mapToNullableDateTime').call([expr]);
-                } else {
-                  expr = refer('mapToDateTime').call([expr]);
-                }
-              } else {
-                expr = expr.asA(type);
-              }
-              Expression defaultRef = refer('null');
-              if (fType.nullabilitySuffix != NullabilitySuffix.question) {
-                if (fType.isDartCoreString) {
-                  defaultRef = CodeExpression(Code('\'\''));
-                } else if (fType.isDartCoreBool) {
-                  defaultRef = CodeExpression(Code('false'));
-                } else if (fType.isDartCoreDouble) {
-                  defaultRef = CodeExpression(Code('0.0'));
-                } else if (fType.isDartCoreInt || fType.isDartCoreNum) {
-                  defaultRef = CodeExpression(Code('0'));
-                } else if (fType.element?.displayName == 'DateTime') {
-                  defaultRef = CodeExpression(
-                      Code('DateTime.parse("1970-01-01 00:00:00")'));
-                } else if (fType.isDartCoreList) {
-                  defaultRef = CodeExpression(Code('[]'));
-                }
-              }
-              expr = refer('fields').property('contains').call([
-                literalString(ctx.buildContext.resolveFieldName(field.name)!)
-              ]).conditional(expr, defaultRef);
-              args[field.name] = expr;
-            }
-            b.statements.add(Code(
-                'if (row.every((x) => x == null)) { return Optional.empty(); }'));
-            b.addExpression(declareVar('model')
-                .assign(ctx.buildContext.modelClassType.newInstance([], args)));
-            ctx.relations.forEach((name, relation) {
-              if (!const [
-                RelationshipType.hasOne,
-                RelationshipType.belongsTo,
-                RelationshipType.hasMany
-              ].contains(relation.type)) {
-                return;
-              }
-              var foreign = relation.foreign;
-              if (foreign == null) {
-                log.warning('Foreign relationship for field $name is null');
-                return;
-              }
-              var skipToList = refer('row')
-                  .property('skip')
-                  .call([literalNum(i)])
-                  .property('take')
-                  .call([literalNum(foreign.effectiveFields.length)])
-                  .property('toList')
-                  .call([]);
-              var parsed = refer(
-                      '${foreign.buildContext.modelClassNameRecase.pascalCase}Query')
-                  .newInstance([], {})
-                  .property('parseRow')
-                  .call([], {refer('row').toString(): skipToList});
-              var val =
-                  (relation.type == RelationshipType.hasMany) ? '[m]' : 'm';
-              var code = Code('''
-              modelOpt.ifPresent((m) {
-                model = model.copyWith($name: $val);
-              })
-            ''');
-              var block = Block((b) {
-                b.addExpression(declareVar('modelOpt').assign(parsed));
-                b.addExpression(CodeExpression(code));
-              });
-              var blockStr =
-                  block.accept(DartEmitter(useNullSafetySyntax: true));
-              var ifStr = 'if (row.length > $i) { $blockStr }';
-              b.statements.add(Code(ifStr));
-              i += foreign.effectiveFields.length;
-            });
-            b.addExpression(
-                refer('Optional.of').call([refer('model')]).returned);
-          });
-      }));
-
-      // Add deserialize method
-      clazz.methods.add(Method((m) {
-        m
-          ..name = 'deserialize'
-          ..returns = refer('Optional<${rc.pascalCase}>')
-          ..annotations.add(refer('override'))
-          ..requiredParameters.add(Parameter((b) => b
-            ..name = 'row'
-            ..type = refer('List')
-            ..named = true))
-          ..body = Block((b) {
-            b.addExpression(refer('parseRow')
-                .call([], {refer('row').toString(): refer('row')}).returned);
-          });
-      }));
-
-      // If there are any relations, we need some overrides.
-      clazz.constructors.add(Constructor((b) {
-        b
-          ..requiredParameters.add(Parameter((b) => b
-            ..name = 'parent'
-            ..type = refer('Query')))
-          ..requiredParameters.add(Parameter((b) => b
-            ..name = 'trampoline'
-            ..type = refer('Set<String>')))
-          ..initializers.add(Code('super(parent: parent)'))
-          ..body = Block((b) {
-            b.statements.addAll([
-              Code('trampoline ??= <String>{};'),
-              Code('trampoline.add(tableName);'),
-            ]);
-            ctx.columns.forEach((name, col) {
-              if (col.hasExpression) {
-                var lhs = refer('expressions').index(
-                    literalString(ctx.buildContext.resolveFieldName(name)!));
-                var rhs = literalString(col.expression!);
-                b.addExpression(lhs.assign(rhs));
-              }
-            });
-
-            b.addExpression(refer('_where').assign(
-                queryWhereType.newInstance([], {'query': refer('this')}, [])));
-
-            ctx.relations.forEach((fieldName, relation) {
-              if (relation.type == RelationshipType.belongsTo ||
-                  relation.type == RelationshipType.hasOne ||
-                  relation.type == RelationshipType.hasMany) {
-                var relationForeign = relation.foreign;
-                if (relationForeign == null) {
-                  log.warning('$fieldName has no relationship in the context');
-                  return;
-                }
-                var relationContext =
-                    relation.throughContext ?? relation.foreign;
-                var additionalStrs = relationForeign.effectiveFields.map((f) =>
-                    relationForeign.buildContext.resolveFieldName(f.name));
-                var additionalFields = <Expression>[];
-                for (var element in additionalStrs) {
-                  if (element != null) {
-                    additionalFields.add(literalString(element));
-                  }
-                }
-                var joinArgs = <Expression>[];
-                for (var element in [relation.localKey, relation.foreignKey]) {
-                  if (element != null) {
-                    joinArgs.add(literalString(element));
-                  }
-                }
-                if (relation.isManyToMany) {
-                  var foreignFields = additionalStrs
-                      .map((f) => '${relationForeign.tableName}.$f');
-                  var b = StringBuffer('(SELECT ');
-                  b.write('${relationContext?.tableName}');
-                  b.write('.${relation.foreignKey}');
-                  b.write(foreignFields.isEmpty
-                      ? ''
-                      : ', ${foreignFields.join(', ')}');
-                  b.write(' FROM ');
-                  b.write(relationForeign.tableName);
-                  b.write(' LEFT JOIN ${relationContext?.tableName}');
-                  var throughRelation =
-                  relationContext?.relations.values.firstWhere((e) {
-                    return e.foreignTable == relationForeign.tableName;
-                  }, orElse: () {
-                    var b = StringBuffer();
-                    b.write(ctx.buildContext.modelClassName);
-                    b.write(' has a many-to-many relationship to ');
-                    b.write(relationForeign.buildContext.modelClassName);
-                    b.write(' through ');
-                    b.write(relationContext.buildContext.modelClassName);
-                    b.write(', but ');
-                    b.write(relationContext.buildContext.modelClassName);
-                    b.write(' has no relation pointing to ');
-                    b.write(ctx.buildContext.modelClassName);
-                    b.write('.');
-                    throw b.toString();
-                  });
-                  b.write(' ON ');
-                  b.write('${relation.throughContext!.tableName}');
-                  b.write('.');
-                  b.write(throughRelation?.localKey);
-                  b.write('=');
-                  b.write(relationForeign.tableName);
-                  b.write('.');
-                  b.write(throughRelation?.foreignKey);
-                  b.write(')');
-                  joinArgs.insert(0, literalString(b.toString()));
-                } else {
-                  var foreignQueryType = refer(
-                      '${relationForeign.buildContext.modelClassNameRecase.pascalCase}Query');
-                  clazz
-                    ..fields.add(Field((b) => b
-                      ..name = '_$fieldName'
-                      ..late = true
-                      ..type = foreignQueryType))
-                    ..methods.add(Method((b) => b
-                      ..name = fieldName
-                      ..type = MethodType.getter
-                      ..returns = foreignQueryType
-                      ..body = refer('_$fieldName').returned.statement));
-                  var queryInstantiation = foreignQueryType.newInstance(
-                      [],
-                      {'query': refer('this')},
-                      [refer('trampoline')]);
-                  joinArgs.insert(
-                      0, refer('_$fieldName').assign(queryInstantiation));
-                }
-                var joinType = relation.joinTypeString;
-                b.addExpression(refer(joinType).call(joinArgs, {
-                  'additionalFields': literalList(additionalFields),
-                  'trampoline': refer('trampoline'),
-                }));
-              }
-            });
-
-            // If we have any many-to-many relations, we need to prevent fetching this table within their joins.
-            var manyToMany =
-            ctx.relations.entries.where((e) => e.value.isManyToMany);
-            if (manyToMany.isNotEmpty) {
-              var outExprs = manyToMany.map<Expression>((e) {
-                var foreignTableName = e.value.throughContext!.tableName;
-                return CodeExpression(Code('''
-            (!(
-              trampoline.contains('${ctx.tableName}')
-              && trampoline.contains('$foreignTableName')
-            ))
-          '''));
-              });
-              var out = outExprs.reduce((a, b) => a.and(b));
-              clazz.methods.add(Method((b) {
-                b
-                  ..name = 'canCompile'
-                  ..annotations.add(refer('override'))
-                  ..requiredParameters.add(Parameter((b) => b
-                    ..name = 'trampoline'
-                    ..named = true))
-                  ..returns = refer('bool')
-                  ..body = Block((b) {
-                    b.addExpression(out.returned);
-                  });
-              }));
-            }
-
-            // Also, if there is a @HasMany, generate overrides for query methods that execute in a transaction, and invoke fetchLinked.
-            if (ctx.relations.values
-                .any((r) => r.type == RelationshipType.hasMany)) {
-              for (var methodName in const ['get', 'update', 'delete']) {
-                clazz.methods.add(Method((b) {
-                  var type = ctx.buildContext.modelClassType
-                      .accept(DartEmitter(useNullSafetySyntax: true));
-                  b
-                    ..name = methodName
-                    ..returns = TypeReference((b) => b
-                      ..symbol = 'Future'
-                      ..types.add(TypeReference((b) => b
-                        ..symbol = 'List'
-                        ..types.add(TypeReference((b) => b
-                          ..symbol = '$type'
-                          ..isNullable = false)))))
-                    ..annotations.add(refer('override'))
-                    ..requiredParameters.add(Parameter((b) => b
-                      ..name = 'executor'
-                      ..type = refer('QueryExecutor')
-                      ..named = true));
-                  var merge = <String>[];
-                  ctx.relations.forEach((name, relation) {
-                    if (relation.type == RelationshipType.hasMany) {
-                      var field = ctx.buildContext.fields
-                          .firstWhere((f) => f.name == name);
-                      var typeLiteral = convertTypeReference(field.type)
-                          .accept(DartEmitter(useNullSafetySyntax: true))
-                          .toString()
-                          .replaceAll('?', '');
-                      merge.add('''
-                  $name: $typeLiteral.from(l.$name)..addAll(model.$name)
-                ''');
-                    }
-                  });
-                  var merged = merge.join(', ');
-                  var keyName =
-                      findPrimaryFieldInList(ctx, ctx.buildContext.fields)
-                          ?.name;
-                  if (keyName == null) {
-                    throw '${ctx.buildContext.originalClassName} has no defined primary key.\n'
-                        '@HasMany and @ManyToMany relations require a primary key to be defined on the model.';
-                  }
-                  b.body = Code('''
-              return super.$methodName(executor: executor).then((result) {
-                return result.fold<List<$type>>([], (out, model) {
-                  var idx = out.indexWhere((m) => m.$keyName == model.$keyName);
-                  if (idx == -1) {
-                    return out..add(model);
-                  } else {
-                    var l = out[idx];
-                    return out..[idx] = l.copyWith($merged);
-                  }
-                });
-              });
-            ''');
-                }));
-              }
-            }
-          });
-      }));
-
-
-              });
-            }
-
-
-  /// Generate <Model>QueryWhere class
-  Class buildWhereClass(OrmBuildContext ctx) {
-    return Class((clazz) {
-      var rc = ctx.buildContext.modelClassNameRecase;
-
-      log.info('Generating ${rc.pascalCase}QueryWhere');
-
-      clazz
-        ..name = '${rc.pascalCase}QueryWhere'
-        ..extend = refer('QueryWhere');
-
-      // Build expressionBuilders getter
-      clazz.methods.add(Method((m) {
-        m
-          ..name = 'expressionBuilders'
-          ..returns = refer('List<SqlExpressionBuilder>')
-          ..annotations.add(refer('override'))
-          ..type = MethodType.getter
-          ..body = Block((b) {
-            var references =
-                ctx.effectiveNormalFields.map((f) => refer(f.name));
-            b.addExpression(literalList(references).returned);
-          });
-      }));
-
-      var initializers = <Code>[];
-
-      // Add builders for each field
-      for (var field in ctx.effectiveNormalFields) {
-        String? name = field.name;
-
-        var args = <Expression>[];
-        DartType type;
-        Reference builderType;
-
+  bool shouldUseNamedParameters(ClassElement element) {
+    // 1. Check for @OrmParameterStyle annotation on the class
+    for (var annotation in element.metadata) {
+      if (annotation.element?.displayName == 'OrmParameterStyle') {
         try {
-          type = ctx.buildContext.resolveSerializedFieldType(field.name);
-        } on StateError {
-          type = field.type;
+          var reader = ConstantReader(annotation.computeConstantValue());
+          var useNamed = reader.read('useNamedParameters').boolValue;
+          return useNamed;
+        } catch (e) {
+          // If we can't read the annotation, continue to other checks
         }
+      }
+    }
 
-        if (const TypeChecker.fromRuntime(int).isExactlyType(type) ||
-            const TypeChecker.fromRuntime(double).isExactlyType(type) ||
-            isSpecialId(ctx, field)) {
-          var typeName = type.getDisplayString().replaceAll('?', '');
-          if (isSpecialId(ctx, field)) {
-            typeName = 'int';
-          }
-          builderType = TypeReference((b) => b
-            ..symbol = 'NumericSqlExpressionBuilder'
-            ..types.add(refer(typeName)));
-        } else if (type is InterfaceType && type.element is EnumElement) {
-          builderType = TypeReference((b) => b
-            ..symbol = 'EnumSqlExpressionBuilder'
-            ..types.add(convertTypeReference(type)));
+    // 2. Check build.yaml configuration
+    var config = builderOptions.config;
+    if (config.containsKey('use_named_parameters')) {
+      return config['use_named_parameters'] as bool? ?? true;
+    }
 
-          var question =
-              type.nullabilitySuffix == NullabilitySuffix.question ? '?' : '';
-          args.add(CodeExpression(Code('(v) => v$question.index as int')));
-        } else if (const TypeChecker.fromRuntime(String).isExactlyType(type)) {
-          builderType = refer('StringSqlExpressionBuilder');
-        } else if (const TypeChecker.fromRuntime(bool).isExactlyType(type)) {
-          builderType = refer('BooleanSqlExpressionBuilder');
-        } else if (const TypeChecker.fromRuntime(DateTime)
-            .isExactlyType(type)) {
-          builderType = refer('DateTimeSqlExpressionBuilder');
-        } else if (const TypeChecker.fromRuntime(Map)
-            .isAssignableFromType(type)) {
-          builderType = refer('MapSqlExpressionBuilder');
-        } else if (const TypeChecker.fromRuntime(List)
-            .isAssignableFromType(type)) {
-          builderType = refer('ListSqlExpressionBuilder');
-        } else if (name.endsWith('Id')) {
-          log.fine('Foreign Relationship detected = $name');
-          var relation = ctx.relations[name.replaceAll('Id', '')];
-          if (relation != null) {
-            builderType = TypeReference((b) => b
-              ..symbol = 'NumericSqlExpressionBuilder'
-              ..types.add(refer('int')));
-          } else {
-            log.warning(
-                'Cannot generate ORM code for field ${field.name} of type ${field.type}');
-            continue;
-          }
+    // 3. Default to named parameters
+    return true;
+  }
+
+  void generateOrmCode(ClassElement element, ConstantReader annotation,libuilder.LibraryBuilder lib) {
+    var className = element.name;
+    var queryClassName = '${className}Query';
+    var whereClassName = '${className}QueryWhere';
+    var valuesClassName = '${className}QueryValues';
+    var useNamedParams = shouldUseNamedParameters(element);
+
+    // Generate the Query class
+    lib.body.add(Class((b) {
+      b.name = queryClassName;
+      b.extend = refer('Query<$className, ${queryClassName}>');
+
+      // Constructor with configurable parameter style
+      b.constructors.add(Constructor((b) {
+        if (useNamedParams) {
+          b.optionalParameters.add(Parameter((p) {
+            p.name = 'query';
+            p.type = refer('Query?');
+            p.named = true;
+          }));
         } else {
-          log.warning(
-              'Cannot generate ORM code for field ${field.name} of type ${field.type}');
-          continue;
+          b.optionalParameters.add(Parameter((p) {
+            p.name = 'query';
+            p.type = refer('Query?');
+            p.named = false;
+          }));
         }
-
-        clazz.fields.add(Field((b) {
-          b
-            ..name = name
-            ..modifier = FieldModifier.final$
-            ..type = builderType;
-
-          var literal = ctx.buildContext.resolveFieldName(field.name);
-          if (literal != null) {
-            initializers.add(
-              refer(field.name)
-                  .assign(builderType.newInstance(
-                      [refer('query'), literalString(literal)], {}))
-                  .code,
-            );
-          } else {
-            log.warning('Literal ${field.name} is null');
-          }
-        }));
-      }
-
-      // Now, just add a constructor that initializes each builder.
-      clazz.constructors.add(Constructor((b) {
-        b
-          ..requiredParameters.add(Parameter((b) => b
-            ..name = 'query'
-            ..type = refer('${rc.pascalCase}Query')
-            ..named = true))
-          ..initializers.addAll(initializers);
-      }));
-    });
-  }
-
-  /// Generate <Model>QueryValues class
-  Class buildValuesClass(OrmBuildContext ctx) {
-    return Class((clazz) {
-      var rc = ctx.buildContext.modelClassNameRecase;
-
-      log.info('Generating ${rc.pascalCase}QueryValues');
-
-      clazz
-        ..name = '${rc.pascalCase}QueryValues'
-        ..extend = refer('MapQueryValues');
-
-      // Override casts so that we can cast Lists
-      clazz.methods.add(Method((b) {
-        b
-          ..name = 'casts'
-          ..returns = refer('Map<String, String>')
-          ..annotations.add(refer('override'))
-          ..type = MethodType.getter
-          ..body = Block((b) {
-            var args = <String?, Expression>{};
-
-            for (var field in ctx.effectiveFields) {
-              var fType = field.type;
-              var name = ctx.buildContext.resolveFieldName(field.name);
-              var type = ctx.columns[field.name]?.type;
-              if (type == null) continue;
-              if (const TypeChecker.fromRuntime(List)
-                  .isAssignableFromType(fType)) {
-                args[name] = literalString(type.name);
-              }
-            }
-
-            b.addExpression(literalMap(args).returned);
-          });
+        b.initializers.add(refer('super').call([refer('query')]).code);
       }));
 
-      // Each field generates a getter and setter
-      for (var field in ctx.effectiveNormalFields) {
-        var fType = field.type;
-        var name = ctx.buildContext.resolveFieldName(field.name);
-        var type = convertTypeReference(field.type);
-
-        clazz.methods.add(Method((b) {
-          var value = refer('values').index(literalString(name!));
-
-          if (fType is InterfaceType && fType.element is EnumElement) {
-            value = _deserializeEnumExpression(field, value);
-          } else if (const TypeChecker.fromRuntime(List)
-              .isAssignableFromType(fType)) {
-            value = refer('json')
-                .property('decode')
-                .call([value.asA(refer('String'))])
-                .property('cast')
-                .call([]);
-          } else if (floatTypes.contains(ctx.columns[field.name]?.type)) {
-            value = value
-                .asA(refer('double?'))
-                .ifNullThen(CodeExpression(Code('0.0')));
-          } else {
-            value = value.asA(type);
-          }
-
-          b
-            ..name = field.name
-            ..type = MethodType.getter
-            ..returns = type
-            ..body = Block((b) => b.addExpression(value.returned));
-        }));
-
-        clazz.methods.add(Method((b) {
-          Expression value = refer('value');
-
-          if (fType is InterfaceType && fType.element is EnumElement) {
-            value = _serializeEnumExpression(field, value);
-          } else if (const TypeChecker.fromRuntime(List)
-              .isAssignableFromType(fType)) {
-            value = refer('json').property('encode').call([value]);
-          }
-
-          b
-            ..name = field.name
-            ..type = MethodType.setter
-            ..requiredParameters.add(Parameter((b) => b
-              ..name = 'value'
-              ..type = type
-              ..named = true))
-            ..body =
-                refer('values').index(literalString(name!)).assign(value).code;
-        }));
-      }
-
-      // Add model
-      clazz.methods.add(Method((b) {
-        b
-          ..name = 'copyFrom'
-          ..returns = refer('void')
-          ..requiredParameters.add(Parameter((b) => b
-            ..name = 'model'
-            ..type = ctx.buildContext.modelClassType
-            ..named = true))
-          ..body = Block((b) {
-            for (var field in ctx.effectiveNormalFields) {
-              if (isSpecialId(ctx, field) || field is RelationFieldImpl) {
-                continue;
-              }
-              b.addExpression(refer(field.name)
-                  .assign(refer('model').property(field.name)));
-            }
-
-            for (var field in ctx.effectiveNormalFields) {
-              if (field is RelationFieldImpl) {
-                var original = field.originalFieldName;
-
-                var prop = refer('model').property(original);
-
-                var target = refer('values').index(literalString(
-                    ctx.buildContext.resolveFieldName(field.name)!));
-
-                var foreign = field.relationship.throughContext ??
-                    field.relationship.foreign;
-                var foreignField = field.relationship.findForeignField(ctx);
-
-                var parsedId = prop.nullSafeProperty(foreignField.name);
-
-                if (foreign != null) {
-                  if (isSpecialId(foreign, field)) {
-                    parsedId =
-                        (refer('int').property('tryParse').call([parsedId]));
-                  }
-                }
-                var cond = prop.notEqualTo(literalNull);
-                var condStr =
-                    cond.accept(DartEmitter(useNullSafetySyntax: true));
-                var blkStr =
-                    Block((b) => b.addExpression(target.assign(parsedId)))
-                        .accept(DartEmitter(useNullSafetySyntax: true));
-                var ifStmt = Code('if ($condStr) { $blkStr }');
-                b.statements.add(ifStmt);
-              }
-            }
-          });
-      }));
-    });
-  }
-
-  /// Retrieve the [Expression] to parse a serialized enumeration field.
-  /// Takes into account the [SerializableField] properties.
-  /// Defaults to `enum.values[index as int]`
-  Expression _deserializeEnumExpression(FieldElement field, Expression expr) {
-    Reference enumType =
-        convertTypeReference(field.type, ignoreNullabilityCheck: true);
-    const TypeChecker serializableFieldTypeChecker =
-        TypeChecker.fromRuntime(SerializableField);
-    final annotation = serializableFieldTypeChecker.firstAnnotationOf(field);
-    Expression? parseExpr;
-    if (null != annotation) {
-      final deserializer = annotation.getField('deserializer')?.toSymbolValue();
-      if (null != deserializer) {
-        var type = 'int';
-        final serializesTo = annotation.getField('serializesTo')?.toTypeValue();
-        if (null != serializesTo) {
-          type = serializesTo.element!.displayName;
+      // newWhereClause method - with configurable parameter style
+      b.methods.add(Method((b) {
+        b.name = 'newWhereClause';
+        b.returns = refer(whereClassName);
+        b.annotations.add(refer('override'));
+        if (useNamedParams) {
+          b.body = Code('return ${whereClassName}(query: this);');
+        } else {
+          b.body = Code('return ${whereClassName}(this);');
         }
-        parseExpr = Reference(deserializer).expression([expr.asA(refer(type))]);
+      }));
+
+      // Generate other query methods
+      generateQueryMethods(b, className, element, useNamedParams);
+    }));
+
+    // Generate the QueryWhere class
+    lib.body.add(Class((b) {
+      b.name = whereClassName;
+      b.extend = refer('QueryWhere');
+
+      // Constructor with configurable parameter style
+      b.constructors.add(Constructor((b) {
+        if (useNamedParams) {
+          b.requiredParameters.add(Parameter((p) {
+            p.name = 'query';
+            p.type = refer(queryClassName);
+            p.named = true;
+            p.required = true;
+          }));
+        } else {
+          b.requiredParameters.add(Parameter((p) {
+            p.name = 'query';
+            p.type = refer(queryClassName);
+            p.named = false;
+          }));
+        }
+        b.initializers.add(refer('super').call([refer('query')]).code);
+      }));
+
+      generateWhereFields(b, element, useNamedParams);
+    }));
+
+    // Generate parseRow method
+    lib.body.add(Method((b) {
+      b.name = 'parseRow';
+      b.returns = refer('Optional<$className>');
+      if (useNamedParams) {
+        b.requiredParameters.add(Parameter((p) {
+          p.name = 'row';
+          p.type = refer('List');
+          p.named = true;
+          p.required = true;
+        }));
+      } else {
+        b.requiredParameters.add(Parameter((p) {
+          p.name = 'row';
+          p.type = refer('List');
+          p.named = false;
+        }));
       }
-    }
 
-    //return parseExpr ??
-    //    enumType.property('values').index(expr.asA(refer('int')));
+      var bodyCode = StringBuffer();
+      bodyCode.writeln('if (row.isEmpty) return Optional.empty();');
 
-    if (parseExpr != null) {
-      return parseExpr;
-    }
+      var fieldIndex = 0;
+      var relationIndex = 0;
 
-    return enumType.property('values').index(refer('mapToInt').call([expr]));
+      for (var field in element.fields) {
+        if (field.isStatic) continue;
+
+        var fieldType = field.type;
+        var isRelation = isRelationField(field);
+
+        if (isRelation) {
+          var relatedClassName = getRelatedClassName(field);
+          if (relatedClassName != null) {
+            bodyCode.writeln('if (row.length > $relationIndex) {');
+            if (useNamedParams) {
+              bodyCode.writeln('  var modelOpt = ${relatedClassName}Query().parseRow(row: row.skip($relationIndex).take(${getRelationFieldCount(field)}).toList());');
+            } else {
+              bodyCode.writeln('  var modelOpt = ${relatedClassName}Query().parseRow(row.skip($relationIndex).take(${getRelationFieldCount(field)}).toList());');
+            }
+            bodyCode.writeln('  // Handle relation assignment');
+            bodyCode.writeln('}');
+            relationIndex += getRelationFieldCount(field);
+          }
+        }
+        fieldIndex++;
+      }
+
+      bodyCode.writeln('return Optional.of($className());'); // Simplified for now
+
+      b.body = Code(bodyCode.toString());
+    }));
+
+    // Generate deserialize method
+    lib.body.add(Method((b) {
+      b.name = 'deserialize';
+      b.returns = refer('Optional<$className>');
+      b.annotations.add(refer('override'));
+      if (useNamedParams) {
+        b.requiredParameters.add(Parameter((p) {
+          p.name = 'row';
+          p.type = refer('List');
+          p.named = true;
+          p.required = true;
+        }));
+        b.body = Code('return parseRow(row: row);');
+      } else {
+        b.requiredParameters.add(Parameter((p) {
+          p.name = 'row';
+          p.type = refer('List');
+          p.named = false;
+        }));
+        b.body = Code('return parseRow(row);');
+      }
+    }));
   }
 
-  /// Retrieve the [Expression] to serialize the enumeration field.
-  /// Takes into account the [SerializableField] properties.
-  Expression _serializeEnumExpression(FieldElement field, Expression expr) {
-    const TypeChecker serializableFieldTypeChecker =
-        TypeChecker.fromRuntime(SerializableField);
-    final annotation = serializableFieldTypeChecker.firstAnnotationOf(field);
-    Expression? parseExpr;
-    if (null != annotation) {
-      final serializer = annotation.getField('serializer')?.toSymbolValue();
-      if (null != serializer) {
-        parseExpr = Reference(serializer).expression([expr]);
+  void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams) {
+    // get method
+    b.methods.add(Method((mb) {
+      mb.name = 'get';
+      mb.returns = refer('Future<List<$className>>');
+      if (useNamedParams) {
+        mb.requiredParameters.add(Parameter((p) {
+          p.name = 'executor';
+          p.type = refer('QueryExecutor');
+          p.named = true;
+          p.required = true;
+        }));
+      } else {
+        mb.requiredParameters.add(Parameter((p) {
+          p.name = 'executor';
+          p.type = refer('QueryExecutor');
+          p.named = false;
+        }));
+      }
+      mb.body = Code('''
+        return super.get(executor).then((result) {
+          return result.map((row) => ${useNamedParams ? 'deserialize(row: row)' : 'deserialize(row)'}).where((x) => x.isPresent).map((x) => x.value).toList();
+        });
+      ''');
+    }));
+
+    // first method
+    b.methods.add(Method((mb) {
+      mb.name = 'first';
+      mb.returns = refer('Future<$className?>');
+      if (useNamedParams) {
+        mb.requiredParameters.add(Parameter((p) {
+          p.name = 'executor';
+          p.type = refer('QueryExecutor');
+          p.named = true;
+          p.required = true;
+        }));
+      } else {
+        mb.requiredParameters.add(Parameter((p) {
+          p.name = 'executor';
+          p.type = refer('QueryExecutor');
+          p.named = false;
+        }));
+      }
+      mb.body = Code('''
+        return super.first(executor).then((result) {
+          if (result.isEmpty) return null;
+          var parsed = ${useNamedParams ? 'deserialize(row: result)' : 'deserialize(result)'};
+          return parsed.isPresent ? parsed.value : null;
+        });
+      ''');
+    }));
+
+    // one method
+    b.methods.add(Method((mb) {
+      mb.name = 'one';
+      mb.returns = refer('Future<$className>');
+      if (useNamedParams) {
+        mb.requiredParameters.add(Parameter((p) {
+          p.name = 'executor';
+          p.type = refer('QueryExecutor');
+          p.named = true;
+          p.required = true;
+        }));
+      } else {
+        mb.requiredParameters.add(Parameter((p) {
+          p.name = 'executor';
+          p.type = refer('QueryExecutor');
+          p.named = false;
+        }));
+      }
+      mb.body = Code('''
+        return super.one(executor).then((result) {
+          var parsed = ${useNamedParams ? 'deserialize(row: result)' : 'deserialize(result)'};
+          if (!parsed.isPresent) {
+            throw StateError('Query returned no results');
+          }
+          return parsed.value;
+        });
+      ''');
+    }));
+  }
+
+  void generateWhereFields(ClassBuilder b, ClassElement element, bool useNamedParams) {
+    for (var field in element.fields) {
+      if (field.isStatic) continue;
+
+      var fieldName = field.name;
+      var dartType = field.type;
+
+      if (isRelationField(field)) {
+        // Handle relation fields
+        var relatedClass = getRelatedClassName(field);
+        if (relatedClass != null) {
+          b.methods.add(Method((mb) {
+            mb.name = fieldName;
+            mb.returns = refer('${relatedClass}QueryWhere');
+            if (useNamedParams) {
+              mb.body = Code('return ${relatedClass}QueryWhere(query: query);');
+            } else {
+              mb.body = Code('return ${relatedClass}QueryWhere(query);');
+            }
+          }));
+        }
+      } else {
+        // Handle regular fields
+        var whereType = getWhereType(dartType);
+        b.methods.add(Method((mb) {
+          mb.name = fieldName;
+          mb.returns = refer(whereType);
+          if (useNamedParams) {
+            mb.body = Code('return ${whereType}(query: query, fieldName: \'$fieldName\');');
+          } else {
+            mb.body = Code('return ${whereType}(query, \'$fieldName\');');
+          }
+        }));
       }
     }
-    return parseExpr ?? CodeExpression(Code('value?.index'));
   }
+
+  bool isRelationField(FieldElement field) {
+    // Check if field has @hasOne, @hasMany, @belongsTo annotations
+    for (var annotation in field.metadata) {
+      var name = annotation.element?.displayName;
+      if (name == 'hasOne' || name == 'hasMany' || name == 'belongsTo') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? getRelatedClassName(FieldElement field) {
+    var type = field.type;
+
+    if (type.isDartCoreList) {
+      // For List<SomeClass>, extract SomeClass
+      if (type is ParameterizedType && type.typeArguments.isNotEmpty) {
+        var argType = type.typeArguments.first;
+        if (argType.element is ClassElement) {
+          return argType.element!.name!;
+        }
+      }
+    } else if (type.element is ClassElement) {
+      // For direct class references
+      return type.element!.name!;
+    }
+
+    return null;
+  }
+
+  int getRelationFieldCount(FieldElement field) {
+    // This would typically be determined by analyzing the related model
+    // For now, return a default count
+    return 3; // Assuming id, created_at, updated_at as minimum
+  }
+
+  String getWhereType(DartType type) {
+    if (type.isDartCoreString) {
+      return 'StringSqlExpressionBuilder';
+    } else if (type.isDartCoreInt) {
+      return 'NumericSqlExpressionBuilder<int>';
+    } else if (type.isDartCoreDouble) {
+      return 'NumericSqlExpressionBuilder<double>';
+    } else if (type.isDartCoreBool) {
+      return 'BooleanSqlExpressionBuilder';
+    } else if (type.element?.name == 'DateTime' && type.element?.library?.name == 'dart.core') {
+      return 'DateTimeSqlExpressionBuilder';
+    } else {
+      return 'SqlExpressionBuilder';
+    }
+  }
+
 }
