@@ -98,7 +98,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
 
       // Override casts so that we can cast doubles
       clazz.methods.add(Method((b) {
-        b
+       /* b
           ..name = 'casts'
           ..annotations.add(refer('override'))
           ..returns = TypeReference((b) => b
@@ -109,7 +109,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..body = Block((b) {
             var args = <String, Expression>{};
 
-            /* Remove casts no numeric values
+            *//* Remove casts no numeric values
             for (var field in ctx.effectiveFields) {
               var name = ctx.buildContext.resolveFieldName(field.name);
               var type = ctx.columns[field.name]?.type;
@@ -119,10 +119,23 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                 args[name!] = literalString('char');
               }
             }
-            */
+            *//*
 
-            b.addExpression(literalMap(args).returned);
-          });
+            b.addExpression(literalMap(args).returned);*/
+
+// newWhereClause()
+
+      //Modified EH 30/05/2025 9h46
+        clazz.methods.add(Method((b) {
+          b
+            ..name = 'newWhereClause'
+            ..annotations.add(refer('override'))
+            ..returns = queryWhereType
+            ..body = Block((b) => b.addExpression(
+                queryWhereType.newInstance([], {refer('query').toString(): refer('this')}).returned));
+        }));
+     //End Modified
+
       }));
 
       // Add values
