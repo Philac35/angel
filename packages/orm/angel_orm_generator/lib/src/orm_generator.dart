@@ -404,14 +404,12 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
       // If there are any relations, we need some overrides.
       clazz.constructors.add(Constructor((b) {
         b
-          ..optionalParameters.add(Parameter((b) => b
-            ..named = true
+          ..requiredParameters.add(Parameter((b) => b
             ..name = 'parent'
-            ..type = refer('Query?')))
-          ..optionalParameters.add(Parameter((b) => b
-            ..named = true
+            ..type = refer('Query')))
+          ..requiredParameters.add(Parameter((b) => b
             ..name = 'trampoline'
-            ..type = refer('Set<String>?')))
+            ..type = refer('Set<String>')))
           ..initializers.add(Code('super(parent: parent)'))
           ..body = Block((b) {
             b.statements.addAll([
@@ -537,6 +535,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             });
           });
       }));
+
 
       // If we have any many-to-many relations, we need to prevent
       // fetching this table within their joins.
