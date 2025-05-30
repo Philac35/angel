@@ -2,6 +2,7 @@
 //It manages only named parameters
 
 import 'dart:async';
+
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
@@ -11,6 +12,7 @@ import 'package:angel3_serialize_generator/angel3_serialize_generator.dart';
 import 'package:build/build.dart';
 import 'package:code_builder/code_builder.dart' hide LibraryBuilder;
 import 'package:source_gen/source_gen.dart';
+
 import 'orm_build_context.dart';
 
 var floatTypes = [
@@ -116,8 +118,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..name = 'newWhereClause'
           ..annotations.add(refer('override'))
           ..returns = queryWhereType
-          ..body = Block((b) => b.addExpression(
-              queryWhereType.newInstance([], {refer('query').toString(): refer('this')}).returned));
+          ..body = Block((b) => b.addExpression(queryWhereType.newInstance(
+              [], {refer('query').toString(): refer('this')}).returned));
       }));
 
       // Add values
@@ -154,23 +156,24 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..type = MethodType.getter
           ..body = Block((b) {
             var names = ctx.effectiveFields
-                .map((f) => literalString(ctx.buildContext.resolveFieldName(f.name)!))
+                .map((f) =>
+                    literalString(ctx.buildContext.resolveFieldName(f.name)!))
                 .toList();
             b.addExpression(
                 declareConst('_fields').assign(literalConstList(names)));
             b.addExpression(refer('_selectedFields')
                 .property('isEmpty')
                 .conditional(
-              refer('_fields'),
-              refer('_fields')
-                  .property('where')
-                  .call([
-                CodeExpression(
-                    Code('(field) => _selectedFields.contains(field)'))
-              ])
-                  .property('toList')
-                  .call([]),
-            )
+                  refer('_fields'),
+                  refer('_fields')
+                      .property('where')
+                      .call([
+                        CodeExpression(
+                            Code('(field) => _selectedFields.contains(field)'))
+                      ])
+                      .property('toList')
+                      .call([]),
+                )
                 .returned);
           });
       }));
@@ -250,7 +253,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                     .call([expr.asA(refer('String'))]).asA(type);
               } else if (floatTypes.contains(ctx.columns[field.name]?.type)) {
                 expr = refer('mapToDouble').call([expr]);
-              } else if (fType is InterfaceType && fType.element is EnumElement) {
+              } else if (fType is InterfaceType &&
+                  fType.element is EnumElement) {
                 var isNull = expr.equalTo(literalNull);
                 final parseExpression = _deserializeEnumExpression(field, expr);
                 expr = isNull.conditional(literalNull, parseExpression);
@@ -278,7 +282,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                 } else if (fType.isDartCoreInt || fType.isDartCoreNum) {
                   defaultRef = CodeExpression(Code('0'));
                 } else if (fType.element?.displayName == 'DateTime') {
-                  defaultRef = CodeExpression(Code('DateTime.parse("1970-01-01 00:00:00")'));
+                  defaultRef = CodeExpression(
+                      Code('DateTime.parse("1970-01-01 00:00:00")'));
                 } else if (fType.isDartCoreList) {
                   defaultRef = CodeExpression(Code('[]'));
                 }
@@ -288,10 +293,16 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
               ]).conditional(expr, defaultRef);
               args[field.name] = expr;
             }
-            b.statements.add(Code('if (row.every((x) => x == null)) { return Optional.empty(); }'));
-            b.addExpression(declareVar('model').assign(ctx.buildContext.modelClassType.newInstance([], args)));
+            b.statements.add(Code(
+                'if (row.every((x) => x == null)) { return Optional.empty(); }'));
+            b.addExpression(declareVar('model')
+                .assign(ctx.buildContext.modelClassType.newInstance([], args)));
             ctx.relations.forEach((name, relation) {
-              if (!const [RelationshipType.hasOne, RelationshipType.belongsTo, RelationshipType.hasMany].contains(relation.type)) {
+              if (!const [
+                RelationshipType.hasOne,
+                RelationshipType.belongsTo,
+                RelationshipType.hasMany
+              ].contains(relation.type)) {
                 return;
               }
               var foreign = relation.foreign;
@@ -306,11 +317,13 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                   .call([literalNum(foreign.effectiveFields.length)])
                   .property('toList')
                   .call([]);
-              var parsed = refer('${foreign.buildContext.modelClassNameRecase.pascalCase}Query')
+              var parsed = refer(
+                      '${foreign.buildContext.modelClassNameRecase.pascalCase}Query')
                   .newInstance([], {})
                   .property('parseRow')
                   .call([], {refer('row').toString(): skipToList});
-              var val = (relation.type == RelationshipType.hasMany) ? '[m]' : 'm';
+              var val =
+                  (relation.type == RelationshipType.hasMany) ? '[m]' : 'm';
               var code = Code('''
               modelOpt.ifPresent((m) {
                 model = model.copyWith($name: $val);
@@ -320,12 +333,14 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                 b.addExpression(declareVar('modelOpt').assign(parsed));
                 b.addExpression(CodeExpression(code));
               });
-              var blockStr = block.accept(DartEmitter(useNullSafetySyntax: true));
+              var blockStr =
+                  block.accept(DartEmitter(useNullSafetySyntax: true));
               var ifStr = 'if (row.length > $i) { $blockStr }';
               b.statements.add(Code(ifStr));
               i += foreign.effectiveFields.length;
             });
-            b.addExpression(refer('Optional.of').call([refer('model')]).returned);
+            b.addExpression(
+                refer('Optional.of').call([refer('model')]).returned);
           });
       }));
 
@@ -340,7 +355,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             ..type = refer('List')
             ..named = true))
           ..body = Block((b) {
-            b.addExpression(refer('parseRow').call([], {refer('row').toString(): refer('row')}).returned);
+            b.addExpression(refer('parseRow')
+                .call([], {refer('row').toString(): refer('row')}).returned);
           });
       }));
 
@@ -361,12 +377,15 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             ]);
             ctx.columns.forEach((name, col) {
               if (col.hasExpression) {
-                var lhs = refer('expressions').index(literalString(ctx.buildContext.resolveFieldName(name)!));
+                var lhs = refer('expressions').index(
+                    literalString(ctx.buildContext.resolveFieldName(name)!));
                 var rhs = literalString(col.expression!);
                 b.addExpression(lhs.assign(rhs));
               }
             });
-            b.addExpression(refer('_where').assign(queryWhereType.newInstance([], {refer('this').toString(): refer('this')})));
+
+            b.addExpression(refer('_where').assign(
+                queryWhereType.newInstance([], {'query': refer('this')})));
             ctx.relations.forEach((fieldName, relation) {
               if (relation.type == RelationshipType.belongsTo ||
                   relation.type == RelationshipType.hasOne ||
@@ -376,8 +395,10 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                   log.warning('$fieldName has no relationship in the context');
                   return;
                 }
-                var relationContext = relation.throughContext ?? relation.foreign;
-                var additionalStrs = relationForeign.effectiveFields.map((f) => relationForeign.buildContext.resolveFieldName(f.name));
+                var relationContext =
+                    relation.throughContext ?? relation.foreign;
+                var additionalStrs = relationForeign.effectiveFields.map((f) =>
+                    relationForeign.buildContext.resolveFieldName(f.name));
                 var additionalFields = <Expression>[];
                 for (var element in additionalStrs) {
                   if (element != null) {
@@ -391,15 +412,19 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                   }
                 }
                 if (relation.isManyToMany) {
-                  var foreignFields = additionalStrs.map((f) => '${relationForeign.tableName}.$f');
+                  var foreignFields = additionalStrs
+                      .map((f) => '${relationForeign.tableName}.$f');
                   var b = StringBuffer('(SELECT ');
                   b.write('${relationContext?.tableName}');
                   b.write('.${relation.foreignKey}');
-                  b.write(foreignFields.isEmpty ? '' : ', ${foreignFields.join(', ')}');
+                  b.write(foreignFields.isEmpty
+                      ? ''
+                      : ', ${foreignFields.join(', ')}');
                   b.write(' FROM ');
                   b.write(relationForeign.tableName);
                   b.write(' LEFT JOIN ${relationContext?.tableName}');
-                  var throughRelation = relationContext?.relations.values.firstWhere((e) {
+                  var throughRelation =
+                      relationContext?.relations.values.firstWhere((e) {
                     return e.foreignTable == relationForeign.tableName;
                   }, orElse: () {
                     var b = StringBuffer();
@@ -426,7 +451,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                   b.write(')');
                   joinArgs.insert(0, literalString(b.toString()));
                 } else {
-                  var foreignQueryType = refer('${relationForeign.buildContext.modelClassNameRecase.pascalCase}Query');
+                  var foreignQueryType = refer(
+                      '${relationForeign.buildContext.modelClassNameRecase.pascalCase}Query');
                   clazz
                     ..fields.add(Field((b) => b
                       ..name = '_$fieldName'
@@ -437,85 +463,96 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                       ..type = MethodType.getter
                       ..returns = foreignQueryType
                       ..body = refer('_$fieldName').returned.statement));
-                  var queryInstantiation = foreignQueryType.newInstance([], {
-                    'trampoline': refer('trampoline'),
-                    'parent': refer('this')
-                  });
-                  joinArgs.insert(0, refer('_$fieldName').assign(queryInstantiation));
+                  var queryInstantiation = foreignQueryType.newInstance(
+                      [],
+                      [] as Map<String, Expression>,
+                      {
+                        'trampoline': refer('trampoline'),
+                        'parent': refer('this')
+                      } as List<Reference>);
+                  joinArgs.insert(
+                      0, refer('_$fieldName').assign(queryInstantiation));
                 }
                 var joinType = relation.joinTypeString;
                 b.addExpression(refer(joinType).call(joinArgs, {
-                  'additionalFields': literalConstList(additionalFields.toList()),
+                  'additionalFields': literalList(additionalFields),
                   'trampoline': refer('trampoline'),
                 }));
               }
             });
-          });
-      }));
 
-      // If we have any many-to-many relations, we need to prevent fetching this table within their joins.
-      var manyToMany = ctx.relations.entries.where((e) => e.value.isManyToMany);
-      if (manyToMany.isNotEmpty) {
-        var outExprs = manyToMany.map<Expression>((e) {
-          var foreignTableName = e.value.throughContext!.tableName;
-          return CodeExpression(Code('''
+            // If we have any many-to-many relations, we need to prevent fetching this table within their joins.
+            var manyToMany =
+                ctx.relations.entries.where((e) => e.value.isManyToMany);
+            if (manyToMany.isNotEmpty) {
+              var outExprs = manyToMany.map<Expression>((e) {
+                var foreignTableName = e.value.throughContext!.tableName;
+                return CodeExpression(Code('''
           (!(
             trampoline.contains('${ctx.tableName}')
             && trampoline.contains('$foreignTableName')
           ))
         '''));
-        });
-        var out = outExprs.reduce((a, b) => a.and(b));
-        clazz.methods.add(Method((b) {
-          b
-            ..name = 'canCompile'
-            ..annotations.add(refer('override'))
-            ..requiredParameters.add(Parameter((b) => b
-              ..name = 'trampoline'
-              ..named = true))
-            ..returns = refer('bool')
-            ..body = Block((b) {
-              b.addExpression(out.returned);
-            });
-        }));
-      }
+              });
+              var out = outExprs.reduce((a, b) => a.and(b));
+              clazz.methods.add(Method((b) {
+                b
+                  ..name = 'canCompile'
+                  ..annotations.add(refer('override'))
+                  ..requiredParameters.add(Parameter((b) => b
+                    ..name = 'trampoline'
+                    ..named = true))
+                  ..returns = refer('bool')
+                  ..body = Block((b) {
+                    b.addExpression(out.returned);
+                  });
+              }));
+            }
 
-      // Also, if there is a @HasMany, generate overrides for query methods that execute in a transaction, and invoke fetchLinked.
-      if (ctx.relations.values.any((r) => r.type == RelationshipType.hasMany)) {
-        for (var methodName in const ['get', 'update', 'delete']) {
-          clazz.methods.add(Method((b) {
-            var type = ctx.buildContext.modelClassType.accept(DartEmitter(useNullSafetySyntax: true));
-            b
-              ..name = methodName
-              ..returns = TypeReference((b) => b
-                ..symbol = 'Future'
-                ..types.add(TypeReference((b) => b
-                  ..symbol = 'List'
-                  ..types.add(TypeReference((b) => b
-                    ..symbol = '$type'
-                    ..isNullable = false)))))
-              ..annotations.add(refer('override'))
-              ..requiredParameters.add(Parameter((b) => b
-                ..name = 'executor'
-                ..type = refer('QueryExecutor')
-                ..named = true));
-            var merge = <String>[];
-            ctx.relations.forEach((name, relation) {
-              if (relation.type == RelationshipType.hasMany) {
-                var field = ctx.buildContext.fields.firstWhere((f) => f.name == name);
-                var typeLiteral = convertTypeReference(field.type).accept(DartEmitter(useNullSafetySyntax: true)).toString().replaceAll('?', '');
-                merge.add('''
+            // Also, if there is a @HasMany, generate overrides for query methods that execute in a transaction, and invoke fetchLinked.
+            if (ctx.relations.values
+                .any((r) => r.type == RelationshipType.hasMany)) {
+              for (var methodName in const ['get', 'update', 'delete']) {
+                clazz.methods.add(Method((b) {
+                  var type = ctx.buildContext.modelClassType
+                      .accept(DartEmitter(useNullSafetySyntax: true));
+                  b
+                    ..name = methodName
+                    ..returns = TypeReference((b) => b
+                      ..symbol = 'Future'
+                      ..types.add(TypeReference((b) => b
+                        ..symbol = 'List'
+                        ..types.add(TypeReference((b) => b
+                          ..symbol = '$type'
+                          ..isNullable = false)))))
+                    ..annotations.add(refer('override'))
+                    ..requiredParameters.add(Parameter((b) => b
+                      ..name = 'executor'
+                      ..type = refer('QueryExecutor')
+                      ..named = true));
+                  var merge = <String>[];
+                  ctx.relations.forEach((name, relation) {
+                    if (relation.type == RelationshipType.hasMany) {
+                      var field = ctx.buildContext.fields
+                          .firstWhere((f) => f.name == name);
+                      var typeLiteral = convertTypeReference(field.type)
+                          .accept(DartEmitter(useNullSafetySyntax: true))
+                          .toString()
+                          .replaceAll('?', '');
+                      merge.add('''
                 $name: $typeLiteral.from(l.$name)..addAll(model.$name)
               ''');
-              }
-            });
-            var merged = merge.join(', ');
-            var keyName = findPrimaryFieldInList(ctx, ctx.buildContext.fields)?.name;
-            if (keyName == null) {
-              throw '${ctx.buildContext.originalClassName} has no defined primary key.\n'
-                  '@HasMany and @ManyToMany relations require a primary key to be defined on the model.';
-            }
-            b.body = Code('''
+                    }
+                  });
+                  var merged = merge.join(', ');
+                  var keyName =
+                      findPrimaryFieldInList(ctx, ctx.buildContext.fields)
+                          ?.name;
+                  if (keyName == null) {
+                    throw '${ctx.buildContext.originalClassName} has no defined primary key.\n'
+                        '@HasMany and @ManyToMany relations require a primary key to be defined on the model.';
+                  }
+                  b.body = Code('''
             return super.$methodName(executor: executor).then((result) {
               return result.fold<List<$type>>([], (out, model) {
                 var idx = out.indexWhere((m) => m.$keyName == model.$keyName);
@@ -528,18 +565,17 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
               });
             });
           ''');
-          }));
-        }
-      }
+                }));
+              }
+            }
+          });
+      }));
     });
   }
-
 
   /// Generate <Model>QueryWhere class
   Class buildWhereClass(OrmBuildContext ctx) {
     return Class((clazz) {
-
-
       var rc = ctx.buildContext.modelClassNameRecase;
 
       log.info('Generating ${rc.pascalCase}QueryWhere');
@@ -557,7 +593,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..type = MethodType.getter
           ..body = Block((b) {
             var references =
-            ctx.effectiveNormalFields.map((f) => refer(f.name));
+                ctx.effectiveNormalFields.map((f) => refer(f.name));
             b.addExpression(literalList(references).returned);
           });
       }));
@@ -594,7 +630,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             ..types.add(convertTypeReference(type)));
 
           var question =
-          type.nullabilitySuffix == NullabilitySuffix.question ? '?' : '';
+              type.nullabilitySuffix == NullabilitySuffix.question ? '?' : '';
           args.add(CodeExpression(Code('(v) => v$question.index as int')));
         } else if (const TypeChecker.fromRuntime(String).isExactlyType(type)) {
           builderType = refer('StringSqlExpressionBuilder');
@@ -638,8 +674,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             initializers.add(
               refer(field.name)
                   .assign(builderType.newInstance(
-                  [refer('query'), literalString(literal)],
-                  {}))
+                      [refer('query'), literalString(literal)], {}))
                   .code,
             );
           } else {
@@ -659,7 +694,6 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
     });
   }
-
 
   /// Generate <Model>QueryValues class
   Class buildValuesClass(OrmBuildContext ctx) {
@@ -788,15 +822,15 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                 if (foreign != null) {
                   if (isSpecialId(foreign, field)) {
                     parsedId =
-                    (refer('int').property('tryParse').call([parsedId]));
+                        (refer('int').property('tryParse').call([parsedId]));
                   }
                 }
                 var cond = prop.notEqualTo(literalNull);
                 var condStr =
-                cond.accept(DartEmitter(useNullSafetySyntax: true));
+                    cond.accept(DartEmitter(useNullSafetySyntax: true));
                 var blkStr =
-                Block((b) => b.addExpression(target.assign(parsedId)))
-                    .accept(DartEmitter(useNullSafetySyntax: true));
+                    Block((b) => b.addExpression(target.assign(parsedId)))
+                        .accept(DartEmitter(useNullSafetySyntax: true));
                 var ifStmt = Code('if ($condStr) { $blkStr }');
                 b.statements.add(ifStmt);
               }
