@@ -385,7 +385,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             });
 
             b.addExpression(refer('_where').assign(
-                queryWhereType.newInstance([], {'query': refer('this')},[])));
+                queryWhereType.newInstance([], {'query': refer('this')}, [])));
+
             ctx.relations.forEach((fieldName, relation) {
               if (relation.type == RelationshipType.belongsTo ||
                   relation.type == RelationshipType.hasOne ||
@@ -424,7 +425,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                   b.write(relationForeign.tableName);
                   b.write(' LEFT JOIN ${relationContext?.tableName}');
                   var throughRelation =
-                      relationContext?.relations.values.firstWhere((e) {
+                  relationContext?.relations.values.firstWhere((e) {
                     return e.foreignTable == relationForeign.tableName;
                   }, orElse: () {
                     var b = StringBuffer();
@@ -465,11 +466,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                       ..body = refer('_$fieldName').returned.statement));
                   var queryInstantiation = foreignQueryType.newInstance(
                       [],
-                      <String, Expression>{} ,    //Mofification 30/05/2025 11h42 use {} instead of []
-                      [
-                        refer('trampoline'),
-                         refer('this')
-                      ] );  //Modifiy {trampoline:refer['trampoline'] ... } as List<Reference>) by [ ... ]  30/05/2025 12h49
+                      {'query': refer('this')},
+                      [refer('trampoline')]);
                   joinArgs.insert(
                       0, refer('_$fieldName').assign(queryInstantiation));
                 }
@@ -483,16 +481,16 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
 
             // If we have any many-to-many relations, we need to prevent fetching this table within their joins.
             var manyToMany =
-                ctx.relations.entries.where((e) => e.value.isManyToMany);
+            ctx.relations.entries.where((e) => e.value.isManyToMany);
             if (manyToMany.isNotEmpty) {
               var outExprs = manyToMany.map<Expression>((e) {
                 var foreignTableName = e.value.throughContext!.tableName;
                 return CodeExpression(Code('''
-          (!(
-            trampoline.contains('${ctx.tableName}')
-            && trampoline.contains('$foreignTableName')
-          ))
-        '''));
+            (!(
+              trampoline.contains('${ctx.tableName}')
+              && trampoline.contains('$foreignTableName')
+            ))
+          '''));
               });
               var out = outExprs.reduce((a, b) => a.and(b));
               clazz.methods.add(Method((b) {
@@ -540,8 +538,8 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                           .toString()
                           .replaceAll('?', '');
                       merge.add('''
-                $name: $typeLiteral.from(l.$name)..addAll(model.$name)
-              ''');
+                  $name: $typeLiteral.from(l.$name)..addAll(model.$name)
+                ''');
                     }
                   });
                   var merged = merge.join(', ');
@@ -553,25 +551,28 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                         '@HasMany and @ManyToMany relations require a primary key to be defined on the model.';
                   }
                   b.body = Code('''
-            return super.$methodName(executor: executor).then((result) {
-              return result.fold<List<$type>>([], (out, model) {
-                var idx = out.indexWhere((m) => m.$keyName == model.$keyName);
-                if (idx == -1) {
-                  return out..add(model);
-                } else {
-                  var l = out[idx];
-                  return out..[idx] = l.copyWith($merged);
-                }
+              return super.$methodName(executor: executor).then((result) {
+                return result.fold<List<$type>>([], (out, model) {
+                  var idx = out.indexWhere((m) => m.$keyName == model.$keyName);
+                  if (idx == -1) {
+                    return out..add(model);
+                  } else {
+                    var l = out[idx];
+                    return out..[idx] = l.copyWith($merged);
+                  }
+                });
               });
-            });
-          ''');
+            ''');
                 }));
               }
             }
           });
       }));
-    });
-  }
+
+
+              });
+            }
+
 
   /// Generate <Model>QueryWhere class
   Class buildWhereClass(OrmBuildContext ctx) {
