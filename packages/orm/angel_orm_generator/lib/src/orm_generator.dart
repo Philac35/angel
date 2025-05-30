@@ -117,7 +117,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..annotations.add(refer('override'))
           ..returns = queryWhereType
           ..body = Block((b) => b.addExpression(
-              queryWhereType.newInstance([], {refer('query'): refer('this')}).returned));
+              queryWhereType.newInstance([], {refer('query').toString(): refer('this')}).returned));
       }));
 
       // Add values
@@ -309,7 +309,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
               var parsed = refer('${foreign.buildContext.modelClassNameRecase.pascalCase}Query')
                   .newInstance([], {})
                   .property('parseRow')
-                  .call([], {refer('row'): skipToList});
+                  .call([], {refer('row').toString(): skipToList});
               var val = (relation.type == RelationshipType.hasMany) ? '[m]' : 'm';
               var code = Code('''
               modelOpt.ifPresent((m) {
@@ -340,7 +340,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             ..type = refer('List')
             ..named = true))
           ..body = Block((b) {
-            b.addExpression(refer('parseRow').call([], {refer('row'): refer('row')}).returned);
+            b.addExpression(refer('parseRow').call([], {refer('row').toString(): refer('row')}).returned);
           });
       }));
 
@@ -366,7 +366,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                 b.addExpression(lhs.assign(rhs));
               }
             });
-            b.addExpression(refer('_where').assign(queryWhereType.newInstance([], {refer('this'): refer('this')})));
+            b.addExpression(refer('_where').assign(queryWhereType.newInstance([], {refer('this').toString(): refer('this')})));
             ctx.relations.forEach((fieldName, relation) {
               if (relation.type == RelationshipType.belongsTo ||
                   relation.type == RelationshipType.hasOne ||
