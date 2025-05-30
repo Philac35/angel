@@ -465,7 +465,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
                       ..body = refer('_$fieldName').returned.statement));
                   var queryInstantiation = foreignQueryType.newInstance(
                       [],
-                      <String, Expression>{} as Map<String, Expression>,    //Mofification 30/05/2025 11h42 use {} instead of []
+                      <String, Expression>{} ,    //Mofification 30/05/2025 11h42 use {} instead of []
                       {
                         'trampoline': refer('trampoline'),
                         'parent': refer('this')
