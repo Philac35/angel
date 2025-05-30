@@ -229,10 +229,10 @@ Future<OrmBuildContext?> buildOrmContext(
 
       String keyName(OrmBuildContext ctx, String missing) {
         var localKeyName =
-            findPrimaryFieldInList(ctx, ctx.buildContext.fields)?.name;
+            findPrimaryFieldInList(ctx, ctx.buildContext.fields)?.name ?? 'defaultKeyName';   //Modification Use of coallescent operator 30§05/2025 11h49
         // print(
         //     'Keyname for ${buildCtx.originalClassName}.${field.name} maybe = $_keyName??');
-        if (localKeyName == null) {
+        if (localKeyName == 'defaultKeyName') {  //Modification  EH 30/05/2025 replace null by 'defaultKeyName'
           throw '${ctx.buildContext.originalClassName} has no defined primary key, '
               'so the relation on field ${buildCtx.originalClassName}.${field.name} must define a $missing.';
         } else {
