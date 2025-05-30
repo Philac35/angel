@@ -385,7 +385,7 @@ class OrmGenerator extends GeneratorForAnnotation<Orm> {
             });
 
             b.addExpression(refer('_where').assign(
-                queryWhereType.newInstance([], {'query': refer('this')})));
+                queryWhereType.newInstance([], {'query': refer('this')},[])));
             ctx.relations.forEach((fieldName, relation) {
               if (relation.type == RelationshipType.belongsTo ||
                   relation.type == RelationshipType.hasOne ||
