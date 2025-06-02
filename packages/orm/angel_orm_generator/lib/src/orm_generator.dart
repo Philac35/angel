@@ -206,10 +206,10 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         }),
       )
       ..body = Code('''
-        return $modelClassName(
-          ${element.fields.where((f) => !f.isStatic).map((field) => '${field.name}: ${field.name} ?? this.${field.name}').join(', ')}
-        );
-      ''');
+      return $modelClassName(
+        ${element.fields.where((f) => !f.isStatic).map((field) => '${field.name}: ${field.name} ?? this.${field.name}').join(', ')}
+      );
+    ''');
 
     classBuilder.methods.add(copyWithMethod as Method);
 
@@ -219,8 +219,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       ..returns = refer('String')
       ..annotations.add(refer('override'))
       ..body = Code('''
-        return '$modelClassName(${element.fields.where((f) => !f.isStatic).map((field) => '${field.name}: \$${field.name}').join(', ')})';
-      ''');
+      return '$modelClassName(${element.fields.where((f) => !f.isStatic).map((field) => '${field.name}: \$${field.name}').join(', ')})';
+    ''');
 
     classBuilder.methods.add(toStringMethod as Method);
 
