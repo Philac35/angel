@@ -44,11 +44,11 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   static final RegExp _startWithUnderscore = RegExp(r'^_+');
   final BuilderOptions builderOptions;
 
-  Angel3OrmGenerator([this.builderOptions = const BuilderOptions({})]);
 
-  String get valuesClassName => this.valuesClassName;
 
-  String get whereClassName => this.whereClassName;
+  Angel3OrmGenerator([this.builderOptions = const BuilderOptions({})])
+   ;
+
 
   @override
   Future<String> generateForAnnotatedElement(
@@ -228,7 +228,11 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   }
 
   void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams) {
+
+    var whereClassName = '${className}QueryWhere';
+    var valuesClassName = '${className}QueryValues';
     // get method
+
     b.methods.add(Method((mb) {
       mb.name = 'get';
       mb.returns = refer('Future<List<$className>>');
