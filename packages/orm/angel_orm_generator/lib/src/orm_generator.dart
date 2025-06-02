@@ -147,7 +147,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           }));
         }}
         // Call to super constructor
-        var superParams = element.fields.where((f) => !f.isStatic).map((f) => refer('Reference').call([refer(f.name)]).code).toList();
+        var superParams = element.fields.where((f) => !f.isStatic).map((f) => refer('Reference({symbol: \'${f.name}\'}, [Reference({symbol: \'${f.name}\'})], {})').code).toList();
         b.initializers.add(Code('super(${superParams.join(', ')})')); // b.initializers.add(refer('super').call([refer('query')]).code);
 
 
@@ -181,7 +181,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
             p.name = 'query';
             p.type = refer(queryClassName);
             p.named = true;
-            p.required = true;
+            // CHANGE: Remove the 'required' keyword here
+            // p.required = true;
           }));
         } else {
           b.requiredParameters.add(Parameter((p) {
@@ -255,11 +256,12 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.returns = refer('Optional<$className>');
       b.annotations.add(refer('override'));
       if (useNamedParams) {
-        b.optionalParameters.add(Parameter((p) {
+        // CHANGE: Change from optional to required parameters
+        b.requiredParameters.add(Parameter((p) {
           p.name = 'row';
           p.type = refer('List');
          // p.named = true;
-          p.required = true;
+          //p.required = true;  needed when we used optional params
         }));
         b.body = Code('return parseRow(row: row);');
       } else {
