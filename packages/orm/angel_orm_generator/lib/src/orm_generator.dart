@@ -190,7 +190,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }
     constructor.initializers.add(Code(')'));
 
-    classBuilder.constructors.add(constructor as Constructor);
+    classBuilder.constructors.add(constructor .build());
 
     // Add copyWith method
     var copyWithMethod = MethodBuilder()
@@ -211,7 +211,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       );
     ''');
 
-    classBuilder.methods.add(copyWithMethod as Method);
+    classBuilder.methods.add(copyWithMethod.build());
 
     // Add toString method
     var toStringMethod = MethodBuilder()
@@ -222,9 +222,9 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       return '$modelClassName(${element.fields.where((f) => !f.isStatic).map((field) => '${field.name}: \$${field.name}').join(', ')})';
     ''');
 
-    classBuilder.methods.add(toStringMethod as Method);
+    classBuilder.methods.add(toStringMethod.build());
 
-    lib.body.add(classBuilder as Spec);
+    lib.body.add(classBuilder.build());
   }
 
   void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams) {
