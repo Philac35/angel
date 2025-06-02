@@ -125,19 +125,32 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       // Constructor with configurable parameter style
       b.constructors.add(Constructor((b) {
         if (useNamedParams) {
+          // Generate named parameters
+          for (var field in element.fields) {
+            if (field.isStatic) continue;
+
           b.optionalParameters.add(Parameter((p) {
-            p.name = 'query';
-            p.type = refer('Query?');
-            p.named = true;
-          }));
+            p.name = field.name;//'query';
+            p.type = refer(field.type.getDisplayString(withNullability: true)); // refer('Query?');
+            p.named = true;}
+          ));}
         } else {
-          b.optionalParameters.add(Parameter((p) {
+
+          // Generate positional parameters
+          for (var field in element.fields) {
+            if (field.isStatic) continue;
+
+            b.optionalParameters.add(Parameter((p) {
             p.name = 'query';
-            p.type = refer('Query?');
+            p.type = refer(field.type.getDisplayString(withNullability: true));//refer('Query?');
           //  p.named = false;
           }));
-        }
-        b.initializers.add(refer('super').call([refer('query')]).code);
+        }}
+        // Call to super constructor
+        var superParams = element.fields.where((f) => !f.isStatic).map((f) => refer(f.name)).toList();
+        b.initializers.add(Code('super(${superParams.join(', ')})')); // b.initializers.add(refer('super').call([refer('query')]).code);
+
+
       }));
 
       // newWhereClause method - with configurable parameter style
