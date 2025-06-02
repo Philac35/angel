@@ -1,5 +1,5 @@
 //Orm_generator, File modified 02/06/2025
-//Fixed version with proper null safety and parameter handling
+//Fixed version - resolves parameter duplication and missing braces
 
 import 'dart:async';
 import 'package:analyzer/dart/constant/value.dart';
@@ -83,26 +83,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   }
 
   bool shouldUseNamedParameters(ClassElement element) {
-    // 1. Check for @OrmParameterStyle annotation on the class
-    for (var annotation in element.metadata) {
-      if (annotation.element?.displayName == 'OrmParameterStyle') {
-        try {
-          var reader = ConstantReader(annotation.computeConstantValue());
-          var useNamed = reader.read('useNamedParameters').boolValue;
-          return useNamed;
-        } catch (e) {
-          // If we can't read the annotation, continue to other checks
-        }
-      }
-    }
-
-    // 2. Check build.yaml configuration
-    var config = builderOptions.config;
-    if (config.containsKey('use_named_parameters')) {
-      return config['use_named_parameters'] as bool? ?? true;
-    }
-
-    // 3. Default to named parameters
+    // Always use named parameters
     return true;
   }
 
@@ -111,57 +92,29 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     var queryClassName = '${className}Query';
     var whereClassName = '${className}QueryWhere';
     var valuesClassName = '${className}QueryValues';
-    var useNamedParams = shouldUseNamedParameters(element);
+    var useNamedParams = true; // Force named parameters
+
+    // Get non-static fields
+    var regularFields = element.fields.where((f) => !f.isStatic).toList();
 
     // Generate the Query class
     lib.body.add(Class((b) {
       b.name = queryClassName;
       b.extend = refer('Query<$className, $queryClassName>');
 
-      // Constructor with configurable parameter style
+      // Default constructor
       b.constructors.add(Constructor((cb) {
-        if (useNamedParams) {
-          // Generate named parameters for fields
-          for (var field in element.fields) {
-            if (field.isStatic) continue;
-
-            cb.optionalParameters.add(Parameter((p) {
-              p.name = field.name;
-              p.type = refer('${field.type.getDisplayString(withNullability: true)}?');
-              p.named = true;
-            }));
-          }
-        } else {
-          // Generate positional parameters for fields
-          for (var field in element.fields) {
-            if (field.isStatic) continue;
-
-            cb.optionalParameters.add(Parameter((p) {
-              p.name = field.name;
-              p.type = refer('${field.type.getDisplayString(withNullability: true)}?');
-              p.named = false;
-            }));
-          }
-        }
-
-        // Call to super constructor with proper field references
-        var fieldReferences = element.fields
-            .where((f) => !f.isStatic)
-            .map((f) => '\'${f.name}\'')
-            .join(', ');
-        cb.initializers.add(Code('super(tableName: \'${pluralize(className.toLowerCase())}\', fields: [$fieldReferences])'));
+        // Simple constructor without parameters to avoid conflicts
+        var tableName = pluralize(className.toLowerCase());
+        cb.initializers.add(Code('super(tableName: \'$tableName\')'));
       }));
 
-      // newWhereClause method - with configurable parameter style
+      // newWhereClause method
       b.methods.add(Method((mb) {
         mb.name = 'newWhereClause';
         mb.returns = refer(whereClassName);
         mb.annotations.add(refer('override'));
-        if (useNamedParams) {
-          mb.body = Code('return $whereClassName(query: this);');
-        } else {
-          mb.body = Code('return $whereClassName(this);');
-        }
+        mb.body = Code('return $whereClassName(this);');
       }));
 
       // Generate other query methods
@@ -173,92 +126,24 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.name = whereClassName;
       b.extend = refer('QueryWhere');
 
-      // Constructor with configurable parameter style
+      // Constructor
       b.constructors.add(Constructor((cb) {
-        if (useNamedParams) {
-          cb.requiredParameters.add(Parameter((p) {
-            p.name = 'query';
-            p.type = refer(queryClassName);
-            p.named = false; // This should not be named for the super call to work
-          }));
-        } else {
-          cb.requiredParameters.add(Parameter((p) {
-            p.name = 'query';
-            p.type = refer(queryClassName);
-            p.named = false;
-          }));
-        }
-        cb.initializers.add(refer('super').call([refer('query')]).code);
+        cb.requiredParameters.add(Parameter((p) {
+          p.name = 'query';
+          p.type = refer(queryClassName);
+          p.named = true; // Use named parameter
+        }));
+        cb.initializers.add(refer('super').call([refer('query: query')]).code);
       }));
 
       generateWhereFields(b, element, useNamedParams);
     }));
 
-    // Generate parseRow method as a standalone function
-    lib.body.add(Method((mb) {
-      mb.name = '${className.toLowerCase()}ParseRow';
-      mb.returns = refer('$className?');
-      mb.requiredParameters.add(Parameter((p) {
-        p.name = 'row';
-        p.type = refer('List<dynamic>');
-      }));
+    // Generate parseRow function
+    generateParseRowFunction(lib, className, regularFields, useNamedParams);
 
-      var bodyCode = StringBuffer();
-      bodyCode.writeln('if (row.isEmpty) return null;');
-      bodyCode.writeln('try {');
-
-      // Generate field parsing logic
-      var fieldIndex = 0;
-      var constructorParams = <String>[];
-
-      for (var field in element.fields) {
-        if (field.isStatic) continue;
-
-        var fieldType = field.type;
-        var fieldName = field.name;
-
-        if (isRelationField(field)) {
-          // Skip relation fields for now - they need special handling
-          continue;
-        }
-
-        if (fieldType.isDartCoreString) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as String? : null;');
-        } else if (fieldType.isDartCoreInt) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as int? : null;');
-        } else if (fieldType.isDartCoreDouble) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as double? : null;');
-        } else if (fieldType.isDartCoreBool) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as bool? : null;');
-        } else if (fieldType.element?.name == 'DateTime') {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex && row[$fieldIndex] != null ? DateTime.parse(row[$fieldIndex].toString()) : null;');
-        } else {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] : null;');
-        }
-
-        constructorParams.add('$fieldName: $fieldName');
-        fieldIndex++;
-      }
-
-      bodyCode.writeln('  return $className(${constructorParams.join(', ')});');
-      bodyCode.writeln('} catch (e) {');
-      bodyCode.writeln('  print(\'Error parsing row for $className: \$e\');');
-      bodyCode.writeln('  return null;');
-      bodyCode.writeln('}');
-
-      mb.body = Code(bodyCode.toString());
-    }));
-
-    // Generate deserialize method for the Query class
-    lib.body.add(Method((mb) {
-      mb.name = 'deserialize${className}';
-      mb.returns = refer('$className?');
-      mb.requiredParameters.add(Parameter((p) {
-        p.name = 'row';
-        p.type = refer('List<dynamic>');
-      }));
-      mb.body = Code('return ${className.toLowerCase()}ParseRow(row);');
-    }));
+    // Generate deserialize function
+    generateDeserializeFunction(lib, className, useNamedParams);
   }
 
   void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams) {
@@ -266,22 +151,18 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     b.methods.add(Method((mb) {
       mb.name = 'get';
       mb.returns = refer('Future<List<$className>>');
-      if (useNamedParams) {
-        mb.requiredParameters.add(Parameter((p) {
-          p.name = 'executor';
-          p.type = refer('QueryExecutor');
-          p.named = false; // Keep this positional for compatibility
-        }));
-      } else {
-        mb.requiredParameters.add(Parameter((p) {
-          p.name = 'executor';
-          p.type = refer('QueryExecutor');
-          p.named = false;
-        }));
-      }
+
+      mb.requiredParameters.add(Parameter((p) {
+        p.name = 'executor';
+        p.type = refer('QueryExecutor');
+        p.named = true; // Use named parameter
+      }));
       mb.body = Code('''
-        return super.get(executor).then((rows) {
-          return rows.map((row) => deserialize${className}(row)).where((x) => x != null).cast<$className>().toList();
+        return super.get(executor: executor).then((rows) {
+          return rows.map((row) => deserialize${className}(row: row))
+              .where((x) => x != null)
+              .cast<$className>()
+              .toList();
         });
       ''');
     }));
@@ -290,15 +171,16 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     b.methods.add(Method((mb) {
       mb.name = 'first';
       mb.returns = refer('Future<$className?>');
+
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'executor';
         p.type = refer('QueryExecutor');
-        p.named = false;
+        p.named = true; // Use named parameter
       }));
       mb.body = Code('''
-        return super.first(executor).then((row) {
+        return super.first(executor: executor).then((row) {
           if (row == null || row.isEmpty) return null;
-          return deserialize${className}(row);
+          return deserialize${className}(row: row);
         });
       ''');
     }));
@@ -307,14 +189,15 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     b.methods.add(Method((mb) {
       mb.name = 'one';
       mb.returns = refer('Future<$className>');
+
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'executor';
         p.type = refer('QueryExecutor');
-        p.named = false;
+        p.named = true; // Use named parameter
       }));
       mb.body = Code('''
-        return super.one(executor).then((row) {
-          var parsed = deserialize${className}(row);
+        return super.one(executor: executor).then((row) {
+          var parsed = deserialize${className}(row: row);
           if (parsed == null) {
             throw StateError('Query returned no results or failed to parse');
           }
@@ -338,11 +221,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           b.methods.add(Method((mb) {
             mb.name = fieldName;
             mb.returns = refer('${relatedClass}QueryWhere');
-            if (useNamedParams) {
-              mb.body = Code('return ${relatedClass}QueryWhere(${relatedClass}Query());');
-            } else {
-              mb.body = Code('return ${relatedClass}QueryWhere(${relatedClass}Query());');
-            }
+            mb.body = Code('return ${relatedClass}QueryWhere(query: ${relatedClass}Query());');
           }));
         }
       } else {
@@ -351,10 +230,81 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         b.methods.add(Method((mb) {
           mb.name = fieldName;
           mb.returns = refer(whereType);
-          mb.body = Code('return ${whereType}(\'$fieldName\');');
+          mb.body = Code('return ${whereType}(query: query, fieldName: \'$fieldName\');');
         }));
       }
     }
+  }
+
+  void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields, bool useNamedParams) {
+    lib.body.add(Method((mb) {
+      mb.name = '${className.toLowerCase()}ParseRow';
+      mb.returns = refer('$className?');
+
+      mb.requiredParameters.add(Parameter((p) {
+        p.name = 'row';
+        p.type = refer('List<dynamic>');
+        p.named = true; // Use named parameter
+      }));
+
+      var bodyCode = StringBuffer();
+      bodyCode.writeln('if (row.isEmpty) return null;');
+      bodyCode.writeln('try {');
+
+      // Generate field parsing logic
+      var fieldIndex = 0;
+      var constructorArgs = <String>[];
+
+      for (var field in fields) {
+        var fieldType = field.type;
+        var fieldName = field.name;
+
+        if (isRelationField(field)) {
+          // Skip relation fields for basic implementation
+          constructorArgs.add('null');
+          continue;
+        }
+
+        if (fieldType.isDartCoreString) {
+          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as String? : null;');
+        } else if (fieldType.isDartCoreInt) {
+          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as int? : null;');
+        } else if (fieldType.isDartCoreDouble) {
+          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as double? : null;');
+        } else if (fieldType.isDartCoreBool) {
+          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as bool? : null;');
+        } else if (fieldType.element?.name == 'DateTime') {
+          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex && row[$fieldIndex] != null ? DateTime.parse(row[$fieldIndex].toString()) : null;');
+        } else {
+          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] : null;');
+        }
+
+        constructorArgs.add(fieldName);
+        fieldIndex++;
+      }
+
+      bodyCode.writeln('  return $className(${constructorArgs.join(', ')});');
+      bodyCode.writeln('} catch (e) {');
+      bodyCode.writeln('  print(\'Error parsing row for $className: \$e\');');
+      bodyCode.writeln('  return null;');
+      bodyCode.writeln('}');
+
+      mb.body = Code(bodyCode.toString());
+    }));
+  }
+
+  void generateDeserializeFunction(libuilder.LibraryBuilder lib, String className, bool useNamedParams) {
+    lib.body.add(Method((mb) {
+      mb.name = 'deserialize${className}';
+      mb.returns = refer('$className?');
+
+      mb.requiredParameters.add(Parameter((p) {
+        p.name = 'row';
+        p.type = refer('List<dynamic>');
+        p.named = true; // Use named parameter
+      }));
+      mb.body = Code('return ${className.toLowerCase()}ParseRow(row: row);');
+    }));
   }
 
   bool isRelationField(FieldElement field) {
@@ -411,6 +361,12 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
   String pluralize(String word) {
     // Simple pluralization - you might want to use the inflection3 package here
-    return '${word}s';
+    if (word.endsWith('y')) {
+      return '${word.substring(0, word.length - 1)}ies';
+    } else if (word.endsWith('s') || word.endsWith('sh') || word.endsWith('ch') || word.endsWith('x') || word.endsWith('z')) {
+      return '${word}es';
+    } else {
+      return '${word}s';
+    }
   }
 }
