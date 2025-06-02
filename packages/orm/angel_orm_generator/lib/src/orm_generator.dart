@@ -342,7 +342,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         };
       ''');
 
-    b.methods.add(expressionBuildersMethod as Method);
+    b.methods.add(expressionBuildersMethod.build());
   }
 
   void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields, bool useNamedParams) {
