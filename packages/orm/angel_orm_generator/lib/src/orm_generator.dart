@@ -242,7 +242,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.returns = refer('Optional<$className>');
       b.annotations.add(refer('override'));
       if (useNamedParams) {
-        b.requiredParameters.add(Parameter((p) {
+        b.optionalParameters.add(Parameter((p) {
           p.name = 'row';
           p.type = refer('List');
           p.named = true;
