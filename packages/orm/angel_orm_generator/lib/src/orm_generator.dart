@@ -37,7 +37,7 @@ class OrmConfig {
   const OrmConfig({this.useNamedParameters = true});
 }
 
-Builder OrmBuilder(BuilderOptions options) {
+Builder ormBuilder(BuilderOptions options) {
   return SharedPartBuilder([
     Angel3OrmGenerator(options),
   ], 'angel3_orm');
