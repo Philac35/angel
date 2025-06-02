@@ -134,7 +134,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           b.optionalParameters.add(Parameter((p) {
             p.name = 'query';
             p.type = refer('Query?');
-            p.named = false;
+          //  p.named = false;
           }));
         }
         b.initializers.add(refer('super').call([refer('query')]).code);
@@ -192,13 +192,13 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           p.name = 'row';
           p.type = refer('List');
           p.named = true;
-          p.required = true;
+         // p.required = true;
         }));
       } else {
         b.requiredParameters.add(Parameter((p) {
           p.name = 'row';
           p.type = refer('List');
-          p.named = false;
+         // p.named = false;
         }));
       }
 
@@ -245,7 +245,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         b.optionalParameters.add(Parameter((p) {
           p.name = 'row';
           p.type = refer('List');
-          p.named = true;
+         // p.named = true;
           p.required = true;
         }));
         b.body = Code('return parseRow(row: row);');
@@ -253,7 +253,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         b.requiredParameters.add(Parameter((p) {
           p.name = 'row';
           p.type = refer('List');
-          p.named = false;
+         // p.named = false;
         }));
         b.body = Code('return parseRow(row);');
       }
@@ -270,7 +270,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           p.name = 'executor';
           p.type = refer('QueryExecutor');
           p.named = true;
-          p.required = true;
+        //  p.required = true;
         }));
       } else {
         mb.requiredParameters.add(Parameter((p) {
@@ -295,7 +295,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           p.name = 'executor';
           p.type = refer('QueryExecutor');
           p.named = true;
-          p.required = true;
+         // p.required = true;
         }));
       } else {
         mb.requiredParameters.add(Parameter((p) {
@@ -322,7 +322,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           p.name = 'executor';
           p.type = refer('QueryExecutor');
           p.named = true;
-          p.required = true;
+        //  p.required = true;
         }));
       } else {
         mb.requiredParameters.add(Parameter((p) {
