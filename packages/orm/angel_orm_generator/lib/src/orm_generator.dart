@@ -147,7 +147,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           }));
         }}
         // Call to super constructor
-        var superParams = element.fields.where((f) => !f.isStatic).map((f) => refer(f.name)).toList();
+        var superParams = element.fields.where((f) => !f.isStatic).map((f) => refer('Reference').call([refer(f.name)]).code).toList();
         b.initializers.add(Code('super(${superParams.join(', ')})')); // b.initializers.add(refer('super').call([refer('query')]).code);
 
 
