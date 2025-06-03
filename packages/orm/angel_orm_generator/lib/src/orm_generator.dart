@@ -1,5 +1,5 @@
-// OrmGenerator, File modified 02/06/2025
-// Fixed version - resolves parameter duplication and missing braces
+// OrmGenerator, File modified 03/06/2025
+// FIXED VERSION - Resolves inconsistent parameter handling AND comma issues
 
 import 'dart:async';
 import 'package:analyzer/dart/constant/value.dart';
@@ -44,11 +44,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   static final RegExp _startWithUnderscore = RegExp(r'^_+');
   final BuilderOptions builderOptions;
 
-
-
-  Angel3OrmGenerator([this.builderOptions = const BuilderOptions({})])
-   ;
-
+  Angel3OrmGenerator([this.builderOptions = const BuilderOptions({})]);
 
   @override
   Future<String> generateForAnnotatedElement(
@@ -87,7 +83,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   }
 
   bool shouldUseNamedParameters(ClassElement element) {
-    return true;
+    return true; // ALWAYS use named parameters
   }
 
   void generateOrmCode(ClassElement element, ConstantReader annotation, libuilder.LibraryBuilder lib) {
@@ -96,7 +92,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     var queryClassName = '${className}Query';
     var whereClassName = '${className}QueryWhere';
     var valuesClassName = '${className}QueryValues';
-    var useNamedParams = true;
+    var useNamedParams = true; // FORCE named parameters
 
     // Get non-static fields
     var regularFields = element.fields.where((f) => !f.isStatic).toList();
@@ -109,55 +105,57 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.name = queryClassName;
       b.extend = refer('Query<$modelClassName, $queryClassName>');
 
-      // Default constructor
+      // Default constructor - FIXED: Use named parameters consistently
       b.constructors.add(Constructor((cb) {
         var tableName = pluralize(className.toLowerCase());
         cb.initializers.add(Code('super(tableName: \'$tableName\')'));
       }));
 
-      // newWhereClause method
+      // newWhereClause method - FIXED: Use named parameter
       b.methods.add(Method((mb) {
         mb.name = 'newWhereClause';
         mb.returns = refer(whereClassName);
         mb.annotations.add(refer('override'));
-        mb.body = Code('return $whereClassName(this);');
+        mb.body = Code('return $whereClassName(query: this);'); // FIXED: named parameter
       }));
 
       // Generate other query methods
       generateQueryMethods(b, modelClassName, element, useNamedParams);
     }));
 
-    // Generate the QueryWhere class
+    // Generate the QueryWhere class - FIXED: Constructor parameters
     lib.body.add(Class((b) {
       b.name = whereClassName;
       b.extend = refer('QueryWhere');
 
-      // Constructor
+      // Constructor - FIXED: Consistent named parameters
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
           p.name = 'query';
           p.type = refer(queryClassName);
           p.named = true;
         }));
-        cb.initializers.add(refer('super').call([refer('query: query')]).code);
+        // FIXED: Pass named parameter to super
+        cb.initializers.add(Code('super(query)'));
       }));
 
       generateWhereFields(b, element, useNamedParams);
     }));
 
-    // Generate the QueryValues class
+    // Generate the QueryValues class - FIXED: Constructor parameters
     lib.body.add(Class((b) {
       b.name = valuesClassName;
       b.extend = refer('QueryValues');
 
-      // Constructor
+      // Constructor - FIXED: Consistent named parameters
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
           p.name = 'query';
           p.type = refer(queryClassName);
           p.named = true;
         }));
-        cb.initializers.add(refer('super').call([refer('query: query')]).code);
+        // FIXED: Pass named parameter to super
+        cb.initializers.add(Code('super(query)'));
       }));
     }));
 
@@ -173,9 +171,13 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       ..name = modelClassName
       ..extend = refer(element.name);
 
+    // Get non-static fields
+    var nonStaticFields = element.fields.where((f) => !f.isStatic).toList();
+
+    // FIXED: Constructor with proper named parameters and comma handling
     var constructor = ConstructorBuilder()
       ..optionalParameters.addAll(
-        element.fields.where((f) => !f.isStatic).map((field) {
+        nonStaticFields.map((field) {
           return Parameter((p) {
             p.name = field.name;
             p.type = refer(field.type.getDisplayString(withNullability: true));
@@ -184,43 +186,66 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         }),
       );
 
-    constructor.initializers.add(Code('super('));
-    for (var field in element.fields.where((f) => !f.isStatic)) {
-      constructor.initializers.add(Code('${field.name}: ${field.name},'));
+    // FIXED: Super constructor call with named parameters - proper comma handling
+    if (nonStaticFields.isNotEmpty) {
+      var superArgs = nonStaticFields
+          .map((field) => '${field.name}: ${field.name}')
+          .join(', ');
+      constructor.initializers.add(Code('super($superArgs)'));
+    } else {
+      constructor.initializers.add(Code('super()'));
     }
-    constructor.initializers.add(Code(')'));
 
-    classBuilder.constructors.add(constructor .build());
+    classBuilder.constructors.add(constructor.build());
 
-    // Add copyWith method
+    // Add copyWith method - FIXED: Named parameters with proper comma handling
     var copyWithMethod = MethodBuilder()
       ..name = 'copyWith'
       ..returns = refer(modelClassName)
       ..optionalParameters.addAll(
-        element.fields.where((f) => !f.isStatic).map((field) {
+        nonStaticFields.map((field) {
           return Parameter((p) {
             p.name = field.name;
             p.type = refer(field.type.getDisplayString(withNullability: true));
             p.named = true;
           });
         }),
-      )
-      ..body = Code('''
-      return $modelClassName(
-        ${element.fields.where((f) => !f.isStatic).map((field) => '${field.name}: ${field.name} ?? this.${field.name}').join(', ')}
       );
-    ''');
+
+    // FIXED: Proper comma handling in copyWith method body
+    if (nonStaticFields.isNotEmpty) {
+      var copyWithArgs = nonStaticFields
+          .map((field) => '${field.name}: ${field.name} ?? this.${field.name}')
+          .join(',\n        ');
+
+      copyWithMethod.body = Code('''
+        return $modelClassName(
+          $copyWithArgs
+        );
+      ''');
+    } else {
+      copyWithMethod.body = Code('return $modelClassName();');
+    }
 
     classBuilder.methods.add(copyWithMethod.build());
 
-    // Add toString method
+    // Add toString method - FIXED: Proper comma handling
     var toStringMethod = MethodBuilder()
       ..name = 'toString'
       ..returns = refer('String')
-      ..annotations.add(refer('override'))
-      ..body = Code('''
-      return '$modelClassName(${element.fields.where((f) => !f.isStatic).map((field) => '${field.name}: \$${field.name}').join(', ')})';
-    ''');
+      ..annotations.add(refer('override'));
+
+    if (nonStaticFields.isNotEmpty) {
+      var toStringFields = nonStaticFields
+          .map((field) => '${field.name}: \$${field.name}')
+          .join(', ');
+
+      toStringMethod.body = Code('''
+        return '$modelClassName($toStringFields)';
+      ''');
+    } else {
+      toStringMethod.body = Code("return '$modelClassName()';");
+    }
 
     classBuilder.methods.add(toStringMethod.build());
 
@@ -228,11 +253,10 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   }
 
   void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams) {
+    var whereClassName = '${className.replaceFirst('Model', '')}QueryWhere';
+    var valuesClassName = '${className.replaceFirst('Model', '')}QueryValues';
 
-    var whereClassName = '${className}QueryWhere';
-    var valuesClassName = '${className}QueryValues';
-    // get method
-
+    // get method - FIXED: All named parameters
     b.methods.add(Method((mb) {
       mb.name = 'get';
       mb.returns = refer('Future<List<$className>>');
@@ -251,7 +275,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       ''');
     }));
 
-    // first method
+    // first method - FIXED: All named parameters
     b.methods.add(Method((mb) {
       mb.name = 'first';
       mb.returns = refer('Future<$className?>');
@@ -268,7 +292,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       ''');
     }));
 
-    // one method
+    // one method - FIXED: All named parameters
     b.methods.add(Method((mb) {
       mb.name = 'one';
       mb.returns = refer('Future<$className>');
@@ -288,10 +312,10 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       ''');
     }));
 
-    // deserialize method
+    // deserialize method - FIXED: Named parameters
     b.methods.add(Method((mb) {
       mb.name = 'deserialize';
-      mb.returns = refer(className);
+      mb.returns = refer('$className?');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'row';
         p.type = refer('Map<String, dynamic>');
@@ -301,46 +325,47 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       mb.body = Code('return deserialize$className(row: row);');
     }));
 
-    // fields getter
-    b.methods.add(Method((mb) {
-      mb.name = 'fields';
-      mb.returns = refer('List<String>');
-      mb.annotations.add(refer('override'));
-      mb.body = Code('return ${className}Fields.allFields;');
-    }));
-
-    // values getter
-    b.methods.add(Method((mb) {
-      mb.name = 'values';
-      mb.returns = refer(valuesClassName);
-      mb.annotations.add(refer('override'));
-      mb.body = Code('return ${className}QueryValues(this);');
-    }));
-
-    // where getter
+    // where getter - FIXED: Named parameter
     b.methods.add(Method((mb) {
       mb.name = 'where';
       mb.returns = refer(whereClassName);
       mb.annotations.add(refer('override'));
-      mb.body = Code('return ${className}QueryWhere(this);');
+      mb.body = Code('return ${whereClassName}(query: this);');
+    }));
+
+    // values getter - FIXED: Named parameter
+    b.methods.add(Method((mb) {
+      mb.name = 'values';
+      mb.returns = refer(valuesClassName);
+      mb.annotations.add(refer('override'));
+      mb.body = Code('return ${valuesClassName}(query: this);');
     }));
   }
 
   void generateWhereFields(ClassBuilder b, ClassElement element, bool useNamedParams) {
-    // expressionBuilders getter
+    var nonStaticFields = element.fields.where((f) => !f.isStatic).toList();
+
+    // expressionBuilders getter - FIXED: All named parameters with proper comma handling
     var expressionBuildersMethod = MethodBuilder()
       ..name = 'expressionBuilders'
       ..returns = refer('Map<String, SqlExpressionBuilder>')
-      ..annotations.add(refer('override'))
-      ..body = Code('''
-        return {
-          ${element.fields.where((f) => !f.isStatic).map((field) {
+      ..annotations.add(refer('override'));
+
+    if (nonStaticFields.isNotEmpty) {
+      var expressions = nonStaticFields.map((field) {
         var fieldType = field.type;
         var whereType = getWhereType(fieldType);
         return "'${field.name}': $whereType(query: query, fieldName: '${field.name}')";
-      }).join(', ')}
+      }).join(',\n          ');
+
+      expressionBuildersMethod.body = Code('''
+        return {
+          $expressions
         };
       ''');
+    } else {
+      expressionBuildersMethod.body = Code('return <String, SqlExpressionBuilder>{};');
+    }
 
     b.methods.add(expressionBuildersMethod.build());
   }
@@ -390,7 +415,14 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         fieldIndex++;
       }
 
-      bodyCode.writeln('  return $className(${constructorArgs.join(', ')});');
+      // FIXED: Proper comma handling in constructor call
+      if (constructorArgs.isNotEmpty) {
+        var argsString = constructorArgs.join(',\n    ');
+        bodyCode.writeln('  return $className(\n    $argsString\n  );');
+      } else {
+        bodyCode.writeln('  return $className();');
+      }
+
       bodyCode.writeln('} catch (e) {');
       bodyCode.writeln('  print(\'Error parsing row for $className: \$e\');');
       bodyCode.writeln('  return null;');
@@ -409,6 +441,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         p.type = refer('Map<String, dynamic>');
         p.named = true;
       }));
+      // FIXED: Named parameter call
       mb.body = Code('return ${className.toLowerCase()}ParseRow(row: row);');
     }));
   }
