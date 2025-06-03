@@ -90,9 +90,9 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.name = queryClassName;
       b.extend = refer('Query<$modelClassName, $whereClassName>');
 
-      // Constructor - FIXED: Use positional parameter for tableName
+      // Constructor - FIXED: Use named parameter for tableName
       b.constructors.add(Constructor((cb) {
-        cb.initializers.add(Code('super(\'$tableName\')'));
+        cb.initializers.add(Code('super(tableName: \'$tableName\')'));
       }));
 
       // newWhereClause method
@@ -167,22 +167,25 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     // Get non-static fields
     var nonStaticFields = element.fields.where((f) => !f.isStatic).toList();
 
-    // Constructor - FIXED: Use positional parameters to match parent class
+    // Constructor - FIXED: Use named parameters
     var constructor = ConstructorBuilder();
 
-    // Add positional parameters
-    constructor.requiredParameters.addAll(
+    // Add named parameters
+    constructor.optionalParameters.addAll(
       nonStaticFields.map((field) {
         return Parameter((p) {
           p.name = field.name;
           p.type = refer(field.type.getDisplayString(withNullability: true));
+          p.named = true;
         });
       }),
     );
 
-    // Super constructor call with positional parameters
+    // Super constructor call with named parameters
     if (nonStaticFields.isNotEmpty) {
-      var superArgs = nonStaticFields.map((field) => field.name).join(', ');
+      var superArgs = nonStaticFields
+          .map((field) => '${field.name}: ${field.name}')
+          .join(', ');
       constructor.initializers.add(Code('super($superArgs)'));
     } else {
       constructor.initializers.add(Code('super()'));
