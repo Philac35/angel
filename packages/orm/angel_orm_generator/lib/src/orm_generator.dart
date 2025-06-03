@@ -99,15 +99,16 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     // Generate the Model class
     generateModelClass(lib, modelClassName, element, useNamedParams);
-
+    var fieldNames = regularFields.map((f) => f.name).toList();
+    var tableName;
     // Generate the Query class
     lib.body.add(Class((b) {
       b.name = queryClassName;
-      b.extend = refer('Query<$modelClassName, $queryClassName>');
+      b.extend = refer('Query<$modelClassName, $whereClassName>');
 
       // Default constructor - FIXED: Use named parameters consistently
       b.constructors.add(Constructor((cb) {
-        var tableName = pluralize(className.toLowerCase());
+         tableName = pluralize(className.toLowerCase());
         cb.initializers.add(Code('super(tableName: \'$tableName\')'));
       }));
 
@@ -120,13 +121,22 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
 
       // Generate other query methods
-      generateQueryMethods(b, modelClassName, element, useNamedParams);
+      generateQueryMethods(b, modelClassName, element, useNamedParams,fieldNames,tableName);
     }));
 
     // Generate the QueryWhere class - FIXED: Constructor parameters
     lib.body.add(Class((b) {
       b.name = whereClassName;
       b.extend = refer('QueryWhere');
+
+      // Fields for each value
+      for (final field in regularFields) {
+        b.fields.add(Field((fb) {
+          fb.name = field.name;
+          fb.type = refer(field.type.getDisplayString(withNullability: true));
+          fb.modifier = FieldModifier.var$;
+        }));
+      }
 
       // Constructor - FIXED: Consistent named parameters
       b.constructors.add(Constructor((cb) {
@@ -157,6 +167,19 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         // FIXED: Pass named parameter to super
         cb.initializers.add(Code('super(query)'));
       }));
+
+
+      b.methods.add(Method((mb) {
+        mb.name = 'toMap';
+        mb.returns = refer('Map<String, dynamic>');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('''
+    return {
+      ${regularFields.map((f) => "'${f.name}': ${f.name}").join(',\n')}
+    };
+  ''');
+      }));
+
     }));
 
     // Generate parseRow function
@@ -252,9 +275,13 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     lib.body.add(classBuilder.build());
   }
 
-  void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams) {
+  void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams,
+      List<String> fieldNames,  String tableNameStr  ) {
     var whereClassName = '${className.replaceFirst('Model', '')}QueryWhere';
     var valuesClassName = '${className.replaceFirst('Model', '')}QueryValues';
+
+    // Set the superclass
+    b.extend = refer('Query<$className, $whereClassName>');
 
     // get method - FIXED: All named parameters
     b.methods.add(Method((mb) {
@@ -339,6 +366,24 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       mb.returns = refer(valuesClassName);
       mb.annotations.add(refer('override'));
       mb.body = Code('return ${valuesClassName}(query: this);');
+    }));
+
+    // fields getter
+    b.methods.add(Method((mb) {
+      mb.name = 'fields';
+      mb.returns = refer('List<String>');
+      mb.type = MethodType.getter;
+      mb.annotations.add(refer('override'));
+      mb.body = Code("return [${fieldNames.map((f) => "'$f'").join(', ')}];");
+    }));
+
+    // tableName getter
+    b.methods.add(Method((mb) {
+      mb.name = 'tableName';
+      mb.returns = refer('String');
+      mb.type = MethodType.getter;
+      mb.annotations.add(refer('override'));
+      mb.body = Code("return '$tableNameStr';");
     }));
   }
 
