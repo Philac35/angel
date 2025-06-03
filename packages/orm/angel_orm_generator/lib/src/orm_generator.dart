@@ -112,13 +112,25 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.name = whereClassName;
       b.extend = refer('QueryWhere');
 
+
+      // Add the field
+      b.fields.add(Field((fb) {
+        fb.name = 'query';
+        fb.type = refer(queryClassName);
+        // If you want it to be final (recommended)
+        fb.modifier = FieldModifier.var$;
+      }));
+
       // Constructor - FIXED: Use positional parameter
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
           p.name = 'query';
           p.type = refer(queryClassName);
         }));
-        cb.initializers.add(Code('super(query)'));
+        // Assign to the field
+        cb.initializers.add(Code('this.query = query'));
+        // Also call super or not cause parent class doesn't have query field
+       // cb.initializers.add(Code('super(query)'));
       }));
 
       // Generate where fields
@@ -266,15 +278,19 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     // getOne method instead of first/one to avoid conflicts
     b.methods.add(Method((mb) {
       mb.name = 'getOne';
-      mb.returns = refer('Future<$className?>');
+      mb.returns = refer('Future<Optional<$className>>');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'executor';
         p.type = refer('QueryExecutor');
       }));
       mb.body = Code('''
         return super.get(executor).then((rows) {
-          if (rows.isEmpty) return null;
-          return deserialize$className(rows.first);
+          if (rows.isEmpty) return Optional.empty();
+          final model = deserialize$className(rows.first as List<dynamic>);
+          if (model == null) {
+            throw Exception('Deserialization returned null for valid row');
+          }
+          return Optional.of(model);
         });
       ''');
     }));
@@ -282,13 +298,13 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     // deserialize method - FIXED: Use List<dynamic> parameter type
     b.methods.add(Method((mb) {
       mb.name = 'deserialize';
-      mb.returns = refer('$className?');
+      mb.returns = refer('Optional<$className?>');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'row';
         p.type = refer('List<dynamic>');
       }));
       mb.annotations.add(refer('override'));
-      mb.body = Code('return ${className.toLowerCase()}ParseRow(row);');
+      mb.body = Code('return Optional.of( ${className.toLowerCase()}ParseRow(row));');
     }));
 
     // FIXED: Use getters instead of methods to avoid conflicts
