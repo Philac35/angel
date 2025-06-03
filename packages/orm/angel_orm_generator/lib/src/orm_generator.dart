@@ -1,5 +1,5 @@
 // OrmGenerator, File modified 03/06/2025
-// FIXED VERSION - Resolves inconsistent parameter handling AND comma issues
+// FIXED VERSION - Resolves parameter handling, method signatures, and parent class compatibility
 
 import 'dart:async';
 import 'package:analyzer/dart/constant/value.dart';
@@ -21,18 +21,6 @@ import 'package:code_builder/code_builder.dart' as libuilder;
 
 import 'package:pub_semver/pub_semver.dart';
 import 'orm_build_context.dart';
-
-// New annotation to configure parameter style
-class OrmParameterStyle {
-  final bool useNamedParameters;
-  const OrmParameterStyle({this.useNamedParameters = true});
-}
-
-// Alternative: you can also use this in build.yaml configuration
-class OrmConfig {
-  final bool useNamedParameters;
-  const OrmConfig({this.useNamedParameters = true});
-}
 
 Builder ormBuilder(BuilderOptions options) {
   return SharedPartBuilder([
@@ -82,114 +70,96 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }
   }
 
-  bool shouldUseNamedParameters(ClassElement element) {
-    return true; // ALWAYS use named parameters
-  }
-
   void generateOrmCode(ClassElement element, ConstantReader annotation, libuilder.LibraryBuilder lib) {
     var className = element.name;
     var modelClassName = '${className}Model';
     var queryClassName = '${className}Query';
     var whereClassName = '${className}QueryWhere';
     var valuesClassName = '${className}QueryValues';
-    var useNamedParams = true; // FORCE named parameters
 
     // Get non-static fields
     var regularFields = element.fields.where((f) => !f.isStatic).toList();
-
-    // Generate the Model class
-    generateModelClass(lib, modelClassName, element, useNamedParams);
     var fieldNames = regularFields.map((f) => f.name).toList();
-    var tableName;
+    var tableName = pluralize(className.toLowerCase());
+
+    // Generate the Model class (for serialization compatibility)
+    generateModelClass(lib, modelClassName, element);
+
     // Generate the Query class
     lib.body.add(Class((b) {
       b.name = queryClassName;
       b.extend = refer('Query<$modelClassName, $whereClassName>');
 
-      // Default constructor - FIXED: Use named parameters consistently
+      // Constructor - FIXED: Use positional parameter for tableName
       b.constructors.add(Constructor((cb) {
-         tableName = pluralize(className.toLowerCase());
-        cb.initializers.add(Code('super(tableName: \'$tableName\')'));
+        cb.initializers.add(Code('super(\'$tableName\')'));
       }));
 
-      // newWhereClause method - FIXED: Use named parameter
+      // newWhereClause method
       b.methods.add(Method((mb) {
         mb.name = 'newWhereClause';
         mb.returns = refer(whereClassName);
         mb.annotations.add(refer('override'));
-        mb.body = Code('return $whereClassName(query: this);'); // FIXED: named parameter
+        mb.body = Code('return $whereClassName(this);');
       }));
 
-      // Generate other query methods
-      generateQueryMethods(b, modelClassName, element, useNamedParams,fieldNames,tableName);
+      // Generate query methods with correct signatures
+      generateQueryMethods(b, modelClassName, element, fieldNames, tableName);
     }));
 
-    // Generate the QueryWhere class - FIXED: Constructor parameters
+    // Generate the QueryWhere class
     lib.body.add(Class((b) {
       b.name = whereClassName;
       b.extend = refer('QueryWhere');
 
-      // Fields for each value
-      for (final field in regularFields) {
-        b.fields.add(Field((fb) {
-          fb.name = field.name;
-          fb.type = refer(field.type.getDisplayString(withNullability: true));
-          fb.modifier = FieldModifier.var$;
-        }));
-      }
-
-      // Constructor - FIXED: Consistent named parameters
+      // Constructor - FIXED: Use positional parameter
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
           p.name = 'query';
           p.type = refer(queryClassName);
-          p.named = true;
         }));
-        // FIXED: Pass named parameter to super
         cb.initializers.add(Code('super(query)'));
       }));
 
-      generateWhereFields(b, element, useNamedParams);
+      // Generate where fields
+      generateWhereFields(b, element);
     }));
 
-    // Generate the QueryValues class - FIXED: Constructor parameters
+    // Generate the QueryValues class
     lib.body.add(Class((b) {
       b.name = valuesClassName;
       b.extend = refer('QueryValues');
 
-      // Constructor - FIXED: Consistent named parameters
+      // Constructor - FIXED: Use positional parameter
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
           p.name = 'query';
           p.type = refer(queryClassName);
-          p.named = true;
         }));
-        // FIXED: Pass named parameter to super
         cb.initializers.add(Code('super(query)'));
       }));
 
-
+      // toMap method
       b.methods.add(Method((mb) {
         mb.name = 'toMap';
         mb.returns = refer('Map<String, dynamic>');
         mb.annotations.add(refer('override'));
         mb.body = Code('''
-    return {
-      ${regularFields.map((f) => "'${f.name}': ${f.name}").join(',\n')}
-    };
-  ''');
+          return {
+            ${regularFields.map((f) => "'${f.name}': ${f.name}").join(',\n')}
+          };
+        ''');
       }));
-
     }));
 
     // Generate parseRow function
-    generateParseRowFunction(lib, modelClassName, regularFields, useNamedParams);
+    generateParseRowFunction(lib, modelClassName, regularFields);
 
     // Generate deserialize function
-    generateDeserializeFunction(lib, modelClassName, useNamedParams);
+    generateDeserializeFunction(lib, modelClassName);
   }
 
-  void generateModelClass(libuilder.LibraryBuilder lib, String modelClassName, ClassElement element, bool useNamedParams) {
+  void generateModelClass(libuilder.LibraryBuilder lib, String modelClassName, ClassElement element) {
     var classBuilder = ClassBuilder()
       ..name = modelClassName
       ..extend = refer(element.name);
@@ -197,23 +167,22 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     // Get non-static fields
     var nonStaticFields = element.fields.where((f) => !f.isStatic).toList();
 
-    // FIXED: Constructor with proper named parameters and comma handling
-    var constructor = ConstructorBuilder()
-      ..optionalParameters.addAll(
-        nonStaticFields.map((field) {
-          return Parameter((p) {
-            p.name = field.name;
-            p.type = refer(field.type.getDisplayString(withNullability: true));
-            p.named = true;
-          });
-        }),
-      );
+    // Constructor - FIXED: Use positional parameters to match parent class
+    var constructor = ConstructorBuilder();
 
-    // FIXED: Super constructor call with named parameters - proper comma handling
+    // Add positional parameters
+    constructor.requiredParameters.addAll(
+      nonStaticFields.map((field) {
+        return Parameter((p) {
+          p.name = field.name;
+          p.type = refer(field.type.getDisplayString(withNullability: true));
+        });
+      }),
+    );
+
+    // Super constructor call with positional parameters
     if (nonStaticFields.isNotEmpty) {
-      var superArgs = nonStaticFields
-          .map((field) => '${field.name}: ${field.name}')
-          .join(', ');
+      var superArgs = nonStaticFields.map((field) => field.name).join(', ');
       constructor.initializers.add(Code('super($superArgs)'));
     } else {
       constructor.initializers.add(Code('super()'));
@@ -221,7 +190,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     classBuilder.constructors.add(constructor.build());
 
-    // Add copyWith method - FIXED: Named parameters with proper comma handling
+    // Add copyWith method with named parameters
     var copyWithMethod = MethodBuilder()
       ..name = 'copyWith'
       ..returns = refer(modelClassName)
@@ -235,24 +204,19 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         }),
       );
 
-    // FIXED: Proper comma handling in copyWith method body
     if (nonStaticFields.isNotEmpty) {
       var copyWithArgs = nonStaticFields
-          .map((field) => '${field.name}: ${field.name} ?? this.${field.name}')
-          .join(',\n        ');
+          .map((field) => '${field.name} ?? this.${field.name}')
+          .join(', ');
 
-      copyWithMethod.body = Code('''
-        return $modelClassName(
-          $copyWithArgs
-        );
-      ''');
+      copyWithMethod.body = Code('return $modelClassName($copyWithArgs);');
     } else {
       copyWithMethod.body = Code('return $modelClassName();');
     }
 
     classBuilder.methods.add(copyWithMethod.build());
 
-    // Add toString method - FIXED: Proper comma handling
+    // Add toString method
     var toStringMethod = MethodBuilder()
       ..name = 'toString'
       ..returns = refer('String')
@@ -263,9 +227,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           .map((field) => '${field.name}: \$${field.name}')
           .join(', ');
 
-      toStringMethod.body = Code('''
-        return '$modelClassName($toStringFields)';
-      ''');
+      toStringMethod.body = Code("return '$modelClassName($toStringFields)';");
     } else {
       toStringMethod.body = Code("return '$modelClassName()';");
     }
@@ -275,26 +237,22 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     lib.body.add(classBuilder.build());
   }
 
-  void generateQueryMethods(ClassBuilder b, String className, ClassElement element, bool useNamedParams,
-      List<String> fieldNames,  String tableNameStr  ) {
+  void generateQueryMethods(ClassBuilder b, String className, ClassElement element,
+      List<String> fieldNames, String tableNameStr) {
     var whereClassName = '${className.replaceFirst('Model', '')}QueryWhere';
     var valuesClassName = '${className.replaceFirst('Model', '')}QueryValues';
 
-    // Set the superclass
-    b.extend = refer('Query<$className, $whereClassName>');
-
-    // get method - FIXED: All named parameters
+    // get method - FIXED: Use positional parameter for executor
     b.methods.add(Method((mb) {
       mb.name = 'get';
       mb.returns = refer('Future<List<$className>>');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'executor';
         p.type = refer('QueryExecutor');
-        p.named = true;
       }));
       mb.body = Code('''
-        return super.get(executor: executor).then((rows) {
-          return rows.map((row) => deserialize$className(row: row))
+        return super.get(executor).then((rows) {
+          return rows.map((row) => deserialize$className(row))
               .where((x) => x != null)
               .cast<$className>()
               .toList();
@@ -302,70 +260,45 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       ''');
     }));
 
-    // first method - FIXED: All named parameters
+    // getOne method instead of first/one to avoid conflicts
     b.methods.add(Method((mb) {
-      mb.name = 'first';
+      mb.name = 'getOne';
       mb.returns = refer('Future<$className?>');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'executor';
         p.type = refer('QueryExecutor');
-        p.named = true;
       }));
       mb.body = Code('''
-        return super.first(executor: executor).then((row) {
-          if (row == null || row.isEmpty) return null;
-          return deserialize$className(row: row);
+        return super.get(executor).then((rows) {
+          if (rows.isEmpty) return null;
+          return deserialize$className(rows.first);
         });
       ''');
     }));
 
-    // one method - FIXED: All named parameters
-    b.methods.add(Method((mb) {
-      mb.name = 'one';
-      mb.returns = refer('Future<$className>');
-      mb.requiredParameters.add(Parameter((p) {
-        p.name = 'executor';
-        p.type = refer('QueryExecutor');
-        p.named = true;
-      }));
-      mb.body = Code('''
-        return super.one(executor: executor).then((row) {
-          var parsed = deserialize$className(row: row);
-          if (parsed == null) {
-            throw StateError('Query returned no results or failed to parse');
-          }
-          return parsed;
-        });
-      ''');
-    }));
-
-    // deserialize method - FIXED: Named parameters
+    // deserialize method - FIXED: Use List<dynamic> parameter type
     b.methods.add(Method((mb) {
       mb.name = 'deserialize';
       mb.returns = refer('$className?');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'row';
-        p.type = refer('Map<String, dynamic>');
-        p.named = true;
+        p.type = refer('List<dynamic>');
       }));
       mb.annotations.add(refer('override'));
-      mb.body = Code('return deserialize$className(row: row);');
+      mb.body = Code('return ${className.toLowerCase()}ParseRow(row);');
     }));
 
-    // where getter - FIXED: Named parameter
+    // FIXED: Use getters instead of methods to avoid conflicts
     b.methods.add(Method((mb) {
-      mb.name = 'where';
+      mb.name = 'where_';
       mb.returns = refer(whereClassName);
-      mb.annotations.add(refer('override'));
-      mb.body = Code('return ${whereClassName}(query: this);');
+      mb.body = Code('return ${whereClassName}(this);');
     }));
 
-    // values getter - FIXED: Named parameter
     b.methods.add(Method((mb) {
-      mb.name = 'values';
+      mb.name = 'values_';
       mb.returns = refer(valuesClassName);
-      mb.annotations.add(refer('override'));
-      mb.body = Code('return ${valuesClassName}(query: this);');
+      mb.body = Code('return ${valuesClassName}(this);');
     }));
 
     // fields getter
@@ -387,42 +320,51 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
   }
 
-  void generateWhereFields(ClassBuilder b, ClassElement element, bool useNamedParams) {
+  void generateWhereFields(ClassBuilder b, ClassElement element) {
     var nonStaticFields = element.fields.where((f) => !f.isStatic).toList();
 
-    // expressionBuilders getter - FIXED: All named parameters with proper comma handling
-    var expressionBuildersMethod = MethodBuilder()
+    // Add field declarations
+    for (final field in nonStaticFields) {
+      b.fields.add(Field((fb) {
+        fb.name = field.name;
+        fb.type = refer(field.type.getDisplayString(withNullability: true));
+        fb.modifier = FieldModifier.var$;
+      }));
+    }
+
+    // FIXED: Use getter instead of method to avoid conflicts
+    var expressionBuildersGetter = MethodBuilder()
       ..name = 'expressionBuilders'
       ..returns = refer('Map<String, SqlExpressionBuilder>')
+      ..type = MethodType.getter
       ..annotations.add(refer('override'));
 
     if (nonStaticFields.isNotEmpty) {
       var expressions = nonStaticFields.map((field) {
         var fieldType = field.type;
         var whereType = getWhereType(fieldType);
-        return "'${field.name}': $whereType(query: query, fieldName: '${field.name}')";
+        return "'${field.name}': $whereType(query, '${field.name}')";
       }).join(',\n          ');
 
-      expressionBuildersMethod.body = Code('''
+      expressionBuildersGetter.body = Code('''
         return {
           $expressions
         };
       ''');
     } else {
-      expressionBuildersMethod.body = Code('return <String, SqlExpressionBuilder>{};');
+      expressionBuildersGetter.body = Code('return <String, SqlExpressionBuilder>{};');
     }
 
-    b.methods.add(expressionBuildersMethod.build());
+    b.methods.add(expressionBuildersGetter.build());
   }
 
-  void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields, bool useNamedParams) {
+  void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields) {
     lib.body.add(Method((mb) {
       mb.name = '${className.toLowerCase()}ParseRow';
       mb.returns = refer('$className?');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'row';
         p.type = refer('List<dynamic>');
-        p.named = true;
       }));
 
       var bodyCode = StringBuffer();
@@ -437,7 +379,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         var fieldName = field.name;
 
         if (isRelationField(field)) {
-          constructorArgs.add('$fieldName: null');
+          constructorArgs.add('null');
           fieldIndex++;
           continue;
         }
@@ -456,14 +398,14 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] : null;');
         }
 
-        constructorArgs.add('$fieldName: $fieldName');
+        constructorArgs.add(fieldName);
         fieldIndex++;
       }
 
-      // FIXED: Proper comma handling in constructor call
+      // Use positional parameters for constructor
       if (constructorArgs.isNotEmpty) {
-        var argsString = constructorArgs.join(',\n    ');
-        bodyCode.writeln('  return $className(\n    $argsString\n  );');
+        var argsString = constructorArgs.join(', ');
+        bodyCode.writeln('  return $className($argsString);');
       } else {
         bodyCode.writeln('  return $className();');
       }
@@ -477,17 +419,15 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
   }
 
-  void generateDeserializeFunction(libuilder.LibraryBuilder lib, String className, bool useNamedParams) {
+  void generateDeserializeFunction(libuilder.LibraryBuilder lib, String className) {
     lib.body.add(Method((mb) {
       mb.name = 'deserialize$className';
       mb.returns = refer('$className?');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'row';
-        p.type = refer('Map<String, dynamic>');
-        p.named = true;
+        p.type = refer('List<dynamic>');
       }));
-      // FIXED: Named parameter call
-      mb.body = Code('return ${className.toLowerCase()}ParseRow(row: row);');
+      mb.body = Code('return ${className.toLowerCase()}ParseRow(row);');
     }));
   }
 
