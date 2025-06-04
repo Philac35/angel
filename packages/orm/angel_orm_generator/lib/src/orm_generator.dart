@@ -92,9 +92,9 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.name = queryClassName;
       b.extend = refer('Query<$modelClassName, $whereClassName>');
 
-      // Constructor - FIXED: Use named parameter for tableName
+      // Constructor - FIXED: Call super() without parameters
       b.constructors.add(Constructor((cb) {
-        cb.initializers.add(Code('super(tableName: \'$tableName\')'));
+        cb.initializers.add(Code('super()'));
       }));
 
       // newWhereClause method
@@ -176,14 +176,14 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         mb.name = 'where';
         mb.returns = refer('${className}QueryWhere');
         mb.annotations.add(refer('override'));
-        mb.body = Code('return where_();');
+        mb.body = Code('return ${className}QueryWhere(query);');
       }));
 
       b.methods.add(Method((mb) {
-        mb.name = 'value';
-        mb.returns = refer('${className}QueryValue');
+        mb.name = 'values';
+        mb.returns = refer('${className}QueryValues');
         mb.annotations.add(refer('override'));
-        mb.body = Code('return value_();');
+        mb.body = Code('return ${className}QueryValues(query);');
       }));
 
       // Generate where fields
@@ -375,7 +375,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
     }
 
-    String getWhereType(DartType fieldType) {
+    String? getWhereType(DartType fieldType) {
       if (fieldType.isDartCoreInt) {
         return 'NumericSqlExpressionBuilder<int>';
       }
@@ -394,10 +394,14 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       if (fieldType.getDisplayString(withNullability: false) == 'DateTime') {
         return 'DateTimeSqlExpressionBuilder';
       }
-      // Add more custom types as needed, e.g.:
-      // if (fieldType.getDisplayString(withNullability: false) == 'YourCustomType') {
-      //   return 'YourCustomSqlExpressionBuilder';
-      // }
+
+      // Check if this is a relation field (foreign key)
+      var fieldElement = nonStaticFields.firstWhere((f) => f.type == fieldType, orElse: () => throw StateError('Field not found'));
+      if (isRelationField(fieldElement)) {
+        // For relation fields, skip them or use a generic builder
+        return null; // We'll handle this in the expressions generation
+      }
+
       return 'SqlExpressionBuilder'; // Fallback for unknown types
     }
 
@@ -409,17 +413,32 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       ..annotations.add(refer('override'));
 
     if (nonStaticFields.isNotEmpty) {
-      var expressions = nonStaticFields.map((field) {
-        var fieldType = field.type;
-        var whereType = getWhereType(fieldType);
-        return "$whereType(query, '${field.name}')";
-      }).join(',\n    ');
+      var expressions = <String>[];
 
-      expressionBuildersGetter.body = Code('''
+      for (var field in nonStaticFields) {
+        var fieldType = field.type;
+
+        // Skip relation fields to avoid "Abstract classes can't be instantiated" error
+        if (isRelationField(field)) {
+          continue;
+        }
+
+        var whereType = getWhereType(fieldType);
+        if (whereType != null) {
+          expressions.add("$whereType(query, '${field.name}')");
+        }
+      }
+
+      if (expressions.isNotEmpty) {
+        var expressionsString = expressions.join(',\n    ');
+        expressionBuildersGetter.body = Code('''
     return [
-      $expressions
+      $expressionsString
     ];
   ''');
+      } else {
+        expressionBuildersGetter.body = Code('return const [];');
+      }
     } else {
       expressionBuildersGetter.body = Code('return const [];');
     }
