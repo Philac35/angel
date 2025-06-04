@@ -27,12 +27,7 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
   }
 
   /// Generate an extended model class. Modification EH 4/06/2025 16h04
-  void generateClass(
-
-
-
-
-  BuildContext ctx, LibraryBuilder file, ConstantReader annotation) {
+  void generateClass( BuildContext ctx, LibraryBuilder file, ConstantReader annotation,builderOptions, {buildStep.inputId.package}) {
 
     // Helper function to read class name suffix from build configuration
     String _getClassNameSuffix(BuilderOptions builderOptions, ConstantReader annotation) {
@@ -63,7 +58,7 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
       var originalClassName = ctx.modelClassNameRecase.pascalCase;
 
       // Get class name suffix from configuration
-      var classNameSuffix = _getClassNameSuffix(ctx.builderOptions, annotation);
+      var classNameSuffix = _getClassNameSuffix(builderOptions, annotation);
       var generatedClassName = '$originalClassName$classNameSuffix'; // or use 'Generated' suffix
 
 
