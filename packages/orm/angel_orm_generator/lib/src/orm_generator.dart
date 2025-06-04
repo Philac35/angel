@@ -121,6 +121,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         fb.modifier = FieldModifier.var$;
       }));
 
+
       // Constructor - FIXED: Use positional parameter
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
@@ -130,7 +131,23 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         // Assign to the field
         cb.initializers.add(Code('this.query = query'));
         // Also call super or not cause parent class doesn't have query field
-       // cb.initializers.add(Code('super(query)'));
+        // cb.initializers.add(Code('super(query)'));
+      }));
+
+      b.methods.add(Method((mb) {
+        mb.name = 'where';
+        mb.returns = refer('${className}QueryWhere');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('''
+          return where_();''');
+      }));
+
+      b.methods.add(Method((mb) {
+        mb.name = 'value';
+        mb.returns = refer('${className}QueryValue');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('''
+          return value_();''');
       }));
 
       // Generate where fields
@@ -142,13 +159,21 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.name = valuesClassName;
       b.extend = refer('QueryValues');
 
+      // Add the field
+      b.fields.add(Field((fb) {
+        fb.name = 'query';
+        fb.type = refer(queryClassName);
+        // If you want it to be final (recommended)
+        fb.modifier = FieldModifier.var$;
+      }));
+
       // Constructor - FIXED: Use positional parameter
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
           p.name = 'query';
           p.type = refer(queryClassName);
         }));
-        cb.initializers.add(Code('super(query)'));
+       // cb.initializers.add(Code('super(query)')); There is no instance variable query in super class Query
       }));
 
       // toMap method
@@ -165,10 +190,10 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
 
     // Generate parseRow function
-    generateParseRowFunction(lib, modelClassName, regularFields);
+   // generateParseRowFunction(lib, modelClassName, regularFields);
 
     // Generate deserialize function
-    generateDeserializeFunction(lib, modelClassName);
+   // generateDeserializeFunction(lib, modelClassName);
   }
 
   void generateModelClass(libuilder.LibraryBuilder lib, String modelClassName, ClassElement element) {
@@ -221,7 +246,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     if (nonStaticFields.isNotEmpty) {
       var copyWithArgs = nonStaticFields
-          .map((field) => '${field.name} ?? this.${field.name}')
+          .map((field) => '${field.name}: ${field.name} ?? this.${field.name}')
           .join(', ');
 
       copyWithMethod.body = Code('return $modelClassName($copyWithArgs);');
@@ -298,13 +323,13 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     // deserialize method - FIXED: Use List<dynamic> parameter type
     b.methods.add(Method((mb) {
       mb.name = 'deserialize';
-      mb.returns = refer('Optional<$className?>');
+      mb.returns = refer('Optional<$className>');
       mb.requiredParameters.add(Parameter((p) {
         p.name = 'row';
         p.type = refer('List<dynamic>');
       }));
       mb.annotations.add(refer('override'));
-      mb.body = Code('return Optional.of( ${className.toLowerCase()}ParseRow(row));');
+      mb.body = Code('return Optional.ofNullable( ${className.toLowerCase()}ParseRow(row));');
     }));
 
     // FIXED: Use getters instead of methods to avoid conflicts
@@ -351,33 +376,73 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
     }
 
+    String getWhereType(DartType fieldType) {
+      // You may need to adjust the type checks depending on your analyzer version
+      if (fieldType.isDartCoreInt) {
+        return 'NumericSqlExpressionBuilder<int>';
+      }
+      if (fieldType.isDartCoreDouble) {
+        return 'NumericSqlExpressionBuilder<double>';
+      }
+      if (fieldType.isDartCoreNum) {
+        return 'NumericSqlExpressionBuilder<num>';
+      }
+      if (fieldType.isDartCoreString) {
+        return 'StringSqlExpressionBuilder';
+      }
+      if (fieldType.isDartCoreBool) {
+        return 'BoolSqlExpressionBuilder';
+      }
+      if (fieldType.getDisplayString(withNullability: false) == 'DateTime') {
+        return 'DateTimeSqlExpressionBuilder';
+      }
+      // Add more custom types as needed, e.g.:
+      // if (fieldType.getDisplayString(withNullability: false) == 'YourCustomType') {
+      //   return 'YourCustomSqlExpressionBuilder';
+      // }
+      return 'SqlExpressionBuilder'; // Fallback for unknown types
+    }
+
+
     // FIXED: Use getter instead of method to avoid conflicts
     var expressionBuildersGetter = MethodBuilder()
       ..name = 'expressionBuilders'
-      ..returns = refer('Map<String, SqlExpressionBuilder>')
+      ..returns = refer('Iterable<SqlExpressionBuilder>')
       ..type = MethodType.getter
       ..annotations.add(refer('override'));
 
     if (nonStaticFields.isNotEmpty) {
       var expressions = nonStaticFields.map((field) {
         var fieldType = field.type;
-        var whereType = getWhereType(fieldType);
-        return "'${field.name}': $whereType(query, '${field.name}')";
-      }).join(',\n          ');
+        var whereType = getWhereType(fieldType); // e.g., NumericSqlExpressionBuilder<int>
+        return "$whereType(query, '${field.name}')";
+      }).join(',\n    ');
 
       expressionBuildersGetter.body = Code('''
-        return {
-          $expressions
-        };
-      ''');
+    return [
+      $expressions
+    ];
+  ''');
     } else {
-      expressionBuildersGetter.body = Code('return <String, SqlExpressionBuilder>{};');
+      expressionBuildersGetter.body = Code('return const [];');
     }
 
-    b.methods.add(expressionBuildersGetter.build());
-  }
 
-  void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields) {
+
+    //Helper function related to isRelationField
+
+    bool isRelationField(FieldElement field) {
+      for (var annotation in field.metadata) {
+        var name = annotation.element?.displayName;
+        if (name == 'hasOne' || name == 'hasMany' || name == 'belongsTo') {
+          return true;
+        }
+      }
+      return false;
+    }
+
+
+    void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields) {
     lib.body.add(Method((mb) {
       mb.name = '${className.toLowerCase()}ParseRow';
       mb.returns = refer('$className?');
@@ -417,11 +482,11 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] : null;');
         }
 
-        constructorArgs.add(fieldName);
+        constructorArgs.add('${fieldName}:${fieldName}' );
         fieldIndex++;
       }
 
-      // Use positional parameters for constructor
+      // Use -!positional- parameters for constructor
       if (constructorArgs.isNotEmpty) {
         var argsString = constructorArgs.join(', ');
         bodyCode.writeln('  return $className($argsString);');
@@ -450,31 +515,10 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
   }
 
-  bool isRelationField(FieldElement field) {
-    for (var annotation in field.metadata) {
-      var name = annotation.element?.displayName;
-      if (name == 'hasOne' || name == 'hasMany' || name == 'belongsTo') {
-        return true;
-      }
-    }
-    return false;
-  }
 
-  String getWhereType(DartType type) {
-    if (type.isDartCoreString) {
-      return 'StringSqlExpressionBuilder';
-    } else if (type.isDartCoreInt) {
-      return 'NumericSqlExpressionBuilder<int>';
-    } else if (type.isDartCoreDouble) {
-      return 'NumericSqlExpressionBuilder<double>';
-    } else if (type.isDartCoreBool) {
-      return 'BooleanSqlExpressionBuilder';
-    } else if (type.element?.name == 'DateTime' && type.element?.library?.name == 'dart.core') {
-      return 'DateTimeSqlExpressionBuilder';
-    } else {
-      return 'SqlExpressionBuilder';
-    }
-  }
+
+
+
 
   String pluralize(String word) {
     if (word.endsWith('y')) {
@@ -485,4 +529,6 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       return '${word}s';
     }
   }
+}
+
 }
