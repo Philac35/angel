@@ -159,13 +159,25 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       b.name = valuesClassName;
       b.extend = refer('QueryValues');
 
-      // Add the field
+      // Add the field query
       b.fields.add(Field((fb) {
+        fb.late=true;
         fb.name = 'query';
         fb.type = refer(queryClassName);
         // If you want it to be final (recommended)
         fb.modifier = FieldModifier.var$;
       }));
+
+      //Add all Fields needed in toMap
+      // Add fields to the class
+      for (final field in regularFields) {
+        b.fields.add(Field((fb) {
+          fb.name = field.name;
+          fb.type = refer(field.type.getDisplayString(withNullability: true));
+        }));
+      }
+
+
 
       // Constructor - FIXED: Use positional parameter
       b.constructors.add(Constructor((cb) {
