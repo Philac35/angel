@@ -1,5 +1,6 @@
 // OrmGenerator, File modified 03/06/2025
 // FIXED VERSION - Resolves parameter handling, method signatures, and parent class compatibility
+// ADDITIONAL FIXES: Added missing deserialize functions and resolved naming conflicts
 
 import 'dart:async';
 import 'package:analyzer/dart/constant/value.dart';
@@ -83,6 +84,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     var tableName = pluralize(className.toLowerCase());
 
     // Generate the Model class (for serialization compatibility)
+    // FIXED: Use different name to avoid conflict with Angel3 serializer
     generateModelClass(lib, modelClassName, element);
 
     // Generate the Query class
@@ -107,69 +109,19 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       generateQueryMethods(b, modelClassName, element, fieldNames, tableName);
     }));
 
-    // Generate the QueryWhere class
-    lib.body.add(Class((b) {
-      b.name = whereClassName;
-      b.extend = refer('QueryWhere');
-
-
-      // Add the field
-      b.fields.add(Field((fb) {
-        fb.name = 'query';
-        fb.type = refer(queryClassName);
-        // If you want it to be final (recommended)
-        fb.modifier = FieldModifier.var$;
-      }));
-
-
-      // Constructor - FIXED: Use positional parameter
-      b.constructors.add(Constructor((cb) {
-        cb.requiredParameters.add(Parameter((p) {
-          p.name = 'query';
-          p.type = refer(queryClassName);
-        }));
-        // Assign to the field
-        cb.initializers.add(Code('this.query = query'));
-        // Also call super or not cause parent class doesn't have query field
-        // cb.initializers.add(Code('super(query)'));
-      }));
-
-      b.methods.add(Method((mb) {
-        mb.name = 'where';
-        mb.returns = refer('${className}QueryWhere');
-        mb.annotations.add(refer('override'));
-        mb.body = Code('''
-          return where_();''');
-      }));
-
-      b.methods.add(Method((mb) {
-        mb.name = 'value';
-        mb.returns = refer('${className}QueryValue');
-        mb.annotations.add(refer('override'));
-        mb.body = Code('''
-          return value_();''');
-      }));
-
-      // Generate where fields
-      generateWhereFields(b, element);
-    }));
-
     // Generate the QueryValues class
     lib.body.add(Class((b) {
       b.name = valuesClassName;
       b.extend = refer('QueryValues');
 
-      // Add the field query
+      // Add the field query - FIXED: Keep as nullable (late workaround)
       b.fields.add(Field((fb) {
-        fb.late=true;
         fb.name = 'query';
-        fb.type = refer(queryClassName);
-        // If you want it to be final (recommended)
+        fb.type = refer('$queryClassName?');
         fb.modifier = FieldModifier.var$;
       }));
 
-      //Add all Fields needed in toMap
-      // Add fields to the class
+      // Add all Fields needed in toMap
       for (final field in regularFields) {
         b.fields.add(Field((fb) {
           fb.name = field.name;
@@ -177,15 +129,13 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         }));
       }
 
-
-
-      // Constructor - FIXED: Use positional parameter
+      // Constructor - FIXED: Assign to nullable field manually
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
           p.name = 'query';
           p.type = refer(queryClassName);
         }));
-       // cb.initializers.add(Code('super(query)')); There is no instance variable query in super class Query
+        cb.initializers.add(Code('this.query = query'));
       }));
 
       // toMap method
@@ -201,11 +151,48 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
     }));
 
-    // Generate parseRow function
-   // generateParseRowFunction(lib, modelClassName, regularFields);
+    // Generate the QueryWhere class
+    lib.body.add(Class((b) {
+      b.name = whereClassName;
+      b.extend = refer('QueryWhere');
 
-    // Generate deserialize function
-   // generateDeserializeFunction(lib, modelClassName);
+      // Add the field
+      b.fields.add(Field((fb) {
+        fb.name = 'query';
+        fb.type = refer(queryClassName);
+        fb.modifier = FieldModifier.var$;
+      }));
+
+      // Constructor - FIXED: Use positional parameter
+      b.constructors.add(Constructor((cb) {
+        cb.requiredParameters.add(Parameter((p) {
+          p.name = 'query';
+          p.type = refer(queryClassName);
+        }));
+        cb.initializers.add(Code('this.query = query'));
+      }));
+
+      b.methods.add(Method((mb) {
+        mb.name = 'where';
+        mb.returns = refer('${className}QueryWhere');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('return where_();');
+      }));
+
+      b.methods.add(Method((mb) {
+        mb.name = 'value';
+        mb.returns = refer('${className}QueryValue');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('return value_();');
+      }));
+
+      // Generate where fields
+      generateWhereFields(b, element);
+    }));
+
+    // FIXED: Generate missing parseRow and deserialize functions
+    generateParseRowFunction(lib, modelClassName, regularFields);
+    generateDeserializeFunction(lib, modelClassName);
   }
 
   void generateModelClass(libuilder.LibraryBuilder lib, String modelClassName, ClassElement element) {
@@ -216,7 +203,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     // Get non-static fields
     var nonStaticFields = element.fields.where((f) => !f.isStatic).toList();
 
-    // Constructor - FIXED: Use named parameters
+    // Constructor - FIXED: Use named parameters to match parent class
     var constructor = ConstructorBuilder();
 
     // Add named parameters
@@ -341,7 +328,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         p.type = refer('List<dynamic>');
       }));
       mb.annotations.add(refer('override'));
-      mb.body = Code('return Optional.ofNullable( ${className.toLowerCase()}ParseRow(row));');
+      mb.body = Code('return Optional.ofNullable(${className.toLowerCase()}ParseRow(row));');
     }));
 
     // FIXED: Use getters instead of methods to avoid conflicts
@@ -389,7 +376,6 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }
 
     String getWhereType(DartType fieldType) {
-      // You may need to adjust the type checks depending on your analyzer version
       if (fieldType.isDartCoreInt) {
         return 'NumericSqlExpressionBuilder<int>';
       }
@@ -415,7 +401,6 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       return 'SqlExpressionBuilder'; // Fallback for unknown types
     }
 
-
     // FIXED: Use getter instead of method to avoid conflicts
     var expressionBuildersGetter = MethodBuilder()
       ..name = 'expressionBuilders'
@@ -426,7 +411,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     if (nonStaticFields.isNotEmpty) {
       var expressions = nonStaticFields.map((field) {
         var fieldType = field.type;
-        var whereType = getWhereType(fieldType); // e.g., NumericSqlExpressionBuilder<int>
+        var whereType = getWhereType(fieldType);
         return "$whereType(query, '${field.name}')";
       }).join(',\n    ');
 
@@ -439,22 +424,22 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       expressionBuildersGetter.body = Code('return const [];');
     }
 
+    b.methods.add(expressionBuildersGetter.build());
+  }
 
-
-    //Helper function related to isRelationField
-
-    bool isRelationField(FieldElement field) {
-      for (var annotation in field.metadata) {
-        var name = annotation.element?.displayName;
-        if (name == 'hasOne' || name == 'hasMany' || name == 'belongsTo') {
-          return true;
-        }
+  // Helper function related to isRelationField
+  bool isRelationField(FieldElement field) {
+    for (var annotation in field.metadata) {
+      var name = annotation.element?.displayName;
+      if (name == 'hasOne' || name == 'hasMany' || name == 'belongsTo') {
+        return true;
       }
-      return false;
     }
+    return false;
+  }
 
-
-    void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields) {
+  // FIXED: Generate parseRow function (moved from inside generateWhereFields)
+  void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields) {
     lib.body.add(Method((mb) {
       mb.name = '${className.toLowerCase()}ParseRow';
       mb.returns = refer('$className?');
@@ -475,8 +460,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         var fieldName = field.name;
 
         if (isRelationField(field)) {
-          constructorArgs.add('null');
-          fieldIndex++;
+          // Skip relation fields in parsing
           continue;
         }
 
@@ -494,11 +478,11 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] : null;');
         }
 
-        constructorArgs.add('${fieldName}:${fieldName}' );
+        constructorArgs.add('$fieldName: $fieldName');
         fieldIndex++;
       }
 
-      // Use -!positional- parameters for constructor
+      // FIXED: Use named parameters for constructor to match Model class
       if (constructorArgs.isNotEmpty) {
         var argsString = constructorArgs.join(', ');
         bodyCode.writeln('  return $className($argsString);');
@@ -515,6 +499,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
   }
 
+  // FIXED: Generate deserialize function (moved from inside generateWhereFields)
   void generateDeserializeFunction(libuilder.LibraryBuilder lib, String className) {
     lib.body.add(Method((mb) {
       mb.name = 'deserialize$className';
@@ -527,11 +512,6 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
   }
 
-
-
-
-
-
   String pluralize(String word) {
     if (word.endsWith('y')) {
       return '${word.substring(0, word.length - 1)}ies';
@@ -541,6 +521,4 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       return '${word}s';
     }
   }
-}
-
 }
