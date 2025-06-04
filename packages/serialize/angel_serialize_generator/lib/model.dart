@@ -1,17 +1,6 @@
 part of 'angel3_serialize_generator.dart';
 
 
-// Define or import the BuilderOptions class
-class BuilderOptions {
-  final Map<String, dynamic> config;
-
-  BuilderOptions(this.config);
-
-  // Optional: Add methods to easily access configuration values
-  String? getString(String key) => config[key] as String?;
-  bool getBool(String key) => config[key] as bool? ?? false;
-// Add more methods as needed for different types
-}
 
 
 class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
