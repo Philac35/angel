@@ -26,14 +26,54 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
     return buf.toString();
   }
 
-  /// Generate an extended model class.
+  /// Generate an extended model class. Modification EH 4/06/2025 16h04
   void generateClass(
-      BuildContext ctx, LibraryBuilder file, ConstantReader annotation) {
+
+
+
+
+  BuildContext ctx, LibraryBuilder file, ConstantReader annotation) {
+
+    // Helper function to read class name suffix from build configuration
+    String _getClassNameSuffix(BuilderOptions builderOptions, ConstantReader annotation) {
+      // Priority 1: Read from build.yaml configuration
+      var configSuffix = builderOptions.config['class_name_suffix'] as String?;
+      if (configSuffix != null && configSuffix.isNotEmpty) {
+        return configSuffix;
+      }
+
+      // Priority 2: Read from annotation parameters (if you want to support this)
+      try {
+        var annotationSuffix = annotation.read('classNameSuffix').stringValue;
+        if (annotationSuffix.isNotEmpty) {
+          return annotationSuffix;
+        }
+      } catch (e) {
+        // Annotation parameter doesn't exist, continue to default
+      }
+
+      // Priority 3: Default fallback
+      return 'Impl';
+    }
+
     file.body.add(Class((clazz) {
-      //log.fine('Generate Class: ${ctx.modelClassNameRecase.pascalCase}');
+
+      // SOLUTION FOR NAME COLLISION:
+      // Generate a unique class name instead of using the same name
+      var originalClassName = ctx.modelClassNameRecase.pascalCase;
+
+      // Get class name suffix from configuration
+      var classNameSuffix = _getClassNameSuffix(ctx.builderOptions, annotation);
+      var generatedClassName = '$originalClassName$classNameSuffix'; // or use 'Generated' suffix
+
+
+  //log.fine('Generate Class: $generatedClassName');
       clazz
-        ..name = ctx.modelClassNameRecase.pascalCase
+        ..name = generatedClassName //Use unique name to avoid collision//ctx.modelClassNameRecase.pascalCase
+        ..extend = refer(originalClassName) //Extend the original abstract class
         ..annotations.add(refer('generatedSerializable'));
+
+
 
       for (var ann in ctx.includeAnnotations) {
         clazz.annotations.add(convertObject(ann));
@@ -68,9 +108,9 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
           //}
 
           for (var el in [field.getter, field]) {
-            //if (el?.documentationComment != null) {
+            if (el?.documentationComment != null) {
             b.docs.addAll(el?.documentationComment?.split('\n') ?? []);
-            //}
+            }
           }
         }));
       }
@@ -102,29 +142,29 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
             f.getter?.isAbstract != false && f.setter?.isAbstract != false);
   }
 
-  /// Generate a constructor with named parameters.
+  /// Generate a constructor with ONLY named parameters.
   void generateConstructor(
       BuildContext ctx, ClassBuilder clazz, LibraryBuilder file) {
     clazz.constructors.add(Constructor((constructor) {
-      // Add all `super` params
-      //constructor.constant = (ctx.clazz.unnamedConstructor?.isConst == true ||
-      //        shouldBeConstant(ctx)) &&
-      //    ctx.fields.every((f) {
-      //      return f.setter == null && f is! ShimFieldImpl;
-      //    });
+      // Note: Removed constant constructor logic for clarity
+      // Add it back if needed based on your requirements
 
+      // CHANGE 1: Convert all constructor parameters to named parameters
+      // Instead of adding to requiredParameters, add everything to optionalParameters as named
       for (var param in ctx.constructorParameters) {
-        //log.fine('Contructor Parameter: ${param.name}');
-        constructor.requiredParameters.add(Parameter((b) => b
+        constructor.optionalParameters.add(Parameter((b) => b
           ..name = param.name
-          ..type = convertTypeReference(param.type)));
+          ..type = convertTypeReference(param.type)
+          ..named = true  // Force named parameter
+          ..required = true  // Make it required named parameter
+        ));
       }
 
-      // Generate intializers
+      // Generate initializers (unchanged)
       for (var field in ctx.fields) {
         if (!shouldBeConstant(ctx) && isListOrMapType(field.type)) {
           var typeName = const TypeChecker.fromRuntime(List)
-                  .isAssignableFromType(field.type)
+              .isAssignableFromType(field.type)
               ? 'List'
               : 'Map';
           String? defaultValue = typeName == 'List' ? '[]' : '{}';
@@ -136,25 +176,23 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
 
           if (field.type.nullabilitySuffix != NullabilitySuffix.question) {
             constructor.initializers.add(Code('''
-              ${field.name} =
-                $typeName.unmodifiable(${field.name})'''));
+            ${field.name} =
+              $typeName.unmodifiable(${field.name})'''));
           } else {
             constructor.initializers.add(Code('''
-              ${field.name} =
-                $typeName.unmodifiable(${field.name} ?? $defaultValue)'''));
+            ${field.name} =
+              $typeName.unmodifiable(${field.name} ?? $defaultValue)'''));
           }
         }
       }
 
-      // Generate the parameters for the constructor
+      // CHANGE 2: All field parameters are already named, just ensure consistency
       for (var field in ctx.fields) {
-        //log.fine('Contructor Field: ${field.name}');
-
         constructor.optionalParameters.add(Parameter((b) {
           b
             ..toThis = shouldBeConstant(ctx)
             ..name = field.name
-            ..named = true;
+            ..named = true;  // Ensure this stays named
 
           var existingDefault = ctx.defaults[field.name];
 
@@ -165,8 +203,6 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
             }
           }
 
-          //log.fine(
-          //    'Constructor => ${field.name} ${field.type.nullabilitySuffix}');
           if (!isListOrMapType(field.type)) {
             b.toThis = true;
           } else if (isListType(field.type)) {
@@ -174,7 +210,7 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
               b.type = convertTypeReference(field.type);
             }
 
-            // Get the default if presence
+            // Get the default if present
             var existingDefault = ctx.defaults[field.name];
             if (existingDefault != null) {
               var defaultValue = dartObjectToString(existingDefault);
@@ -184,24 +220,26 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
             }
           } else if (!b.toThis) {
             b.type = convertTypeReference(field.type);
-          } else {
-            log.fine('Contructor: ${field.name} pass through');
           }
 
+          // CHANGE 3: Handle required parameters properly for named parameters
           if ((ctx.requiredFields.containsKey(field.name) ||
-                  field.type.nullabilitySuffix != NullabilitySuffix.question) &&
+              field.type.nullabilitySuffix != NullabilitySuffix.question) &&
               b.defaultTo == null) {
-            //b.annotations.add(CodeExpression(Code('required')));
-            b.required = true;
+            b.required = true;  // Make it a required named parameter
           }
         }));
       }
 
+      // CHANGE 4: Update super constructor call to use named parameters
       if (ctx.constructorParameters.isNotEmpty) {
         if (!shouldBeConstant(ctx) ||
             ctx.clazz.unnamedConstructor?.isConst == true) {
-          constructor.initializers.add(Code(
-              'super(${ctx.constructorParameters.map((p) => p.name).join(',')})'));
+          // Build named parameter call to super constructor
+          var superParams = ctx.constructorParameters
+              .map((p) => '${p?.name}: ${p?.name}')
+              .join(', ');
+          constructor.initializers.add(Code('super($superParams)'));
         }
       }
     }));
