@@ -1,5 +1,19 @@
 part of 'angel3_serialize_generator.dart';
 
+
+// Define or import the BuilderOptions class
+class BuilderOptions {
+  final Map<String, dynamic> config;
+
+  BuilderOptions(this.config);
+
+  // Optional: Add methods to easily access configuration values
+  String? getString(String key) => config[key] as String?;
+  bool getBool(String key) => config[key] as bool? ?? false;
+// Add more methods as needed for different types
+}
+
+
 class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
   const JsonModelGenerator();
 
@@ -17,9 +31,20 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
       log.fine('Invalid builder context');
       throw 'Invalid builder context';
     }
+    //Define BuilderOptions
+    // Define builderOptions with comprehensive configurations
+    var builderOptions = BuilderOptions({
+      'class_name_suffix': 'Impl',
+      'generate_to_string': true,
+      'generate_copy_with': true,
+      'generate_equals': true,
+      'generate_hash_code': true,
+      'custom_prefix': 'Generated',
+      'use_null_safety': true,
+    });
 
     var lib = Library((b) {
-      generateClass(ctx, b, annotation);
+      generateClass(ctx, b, annotation, builderOptions: builderOptions);
     });
 
     var buf = lib.accept(DartEmitter(useNullSafetySyntax: true));
