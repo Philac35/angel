@@ -154,6 +154,10 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
   /// Generate a constructor with ONLY named parameters.
   void generateConstructor(
       BuildContext ctx, ClassBuilder clazz, LibraryBuilder file) {
+    print('Generating constructor for ${clazz.name}');
+    print('Constructor parameters: ${ctx.constructorParameters.map((p) => p.name).toList()}');
+    print('Fields: ${ctx.fields.map((f) => f.name).toList()}');
+
     clazz.constructors.add(Constructor((constructor) {
       // Note: Removed constant constructor logic for clarity
       // Add it back if needed based on your requirements
@@ -169,7 +173,7 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
         ));
       }
 
-      // Generate initializers (unchanged)
+      // Generate initializers (
       for (var field in ctx.fields) {
         if (!shouldBeConstant(ctx) && isListOrMapType(field.type)) {
           var typeName = const TypeChecker.fromRuntime(List)
@@ -267,17 +271,20 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
         for (var param in ctx.constructorParameters) {
           method.requiredParameters.add(Parameter((b) => b
             ..name = param.name
-            ..type = convertTypeReference(param.type)));
+            ..type = convertTypeReference(param.type)))
+            ..named=true;
         }
       }
 
       var buf = StringBuffer('return ${ctx.modelClassName}(');
       var i = 0;
-      for (var param in ctx.constructorParameters) {
+     /*
+        This seem to had positional parameters
+       for (var param in ctx.constructorParameters) {
         if (i++ > 0) buf.write(', ');
         buf.write(param.name);
       }
-
+*/
       // Add named parameters
       for (var field in ctx.fields) {
         method.optionalParameters.add(Parameter((b) {
