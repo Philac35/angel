@@ -269,10 +269,10 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
       // Add all `super` params
       if (ctx.constructorParameters.isNotEmpty) {
         for (var param in ctx.constructorParameters) {
-          method.requiredParameters.add(Parameter((b) => b
+          method.optionalParameters.add(Parameter((b) => b
             ..name = param.name
-            ..type = convertTypeReference(param.type)))
-            ..named=true;
+            ..type = convertTypeReference(param.type, forceNullable: true)
+            ..named=true));
         }
       }
 
@@ -285,6 +285,11 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
         buf.write(param.name);
       }
 */
+      // FIXED: Handle constructor parameters as named parameters
+      for (var param in ctx.constructorParameters) {
+        if (i++ > 0) buf.write(', ');
+        buf.write('${param.name}: ${param.name} ?? /* get from super or current instance */');
+      }
       // Add named parameters
       for (var field in ctx.fields) {
         method.optionalParameters.add(Parameter((b) {

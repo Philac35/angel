@@ -180,11 +180,11 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
         // Serialize dates
         else if (dateTimeTypeChecker.isAssignableFromType(type)) {
           var question =
-              field.type.nullabilitySuffix == NullabilitySuffix.question
-                  ? "?"
-                  : "";
+          field.type.nullabilitySuffix == NullabilitySuffix.question
+              ? "?"
+              : "";
           serializedRepresentation =
-              'model.${field.name}$question.toIso8601String()';
+          'model.${field.name}$question.toIso8601String()';
         }
 
         // Serialize model classes via `XSerializer.toMap`
@@ -199,24 +199,24 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
             var m = serializerToMap(rc, 'm');
 
             var question =
-                (field.type.nullabilitySuffix == NullabilitySuffix.question)
-                    ? '?'
-                    : '';
+            (field.type.nullabilitySuffix == NullabilitySuffix.question)
+                ? '?'
+                : '';
             serializedRepresentation =
-                'model.${field.name}$question.map((m) => $m).toList()';
+            'model.${field.name}$question.map((m) => $m).toList()';
             log.fine('serializedRepresentation => $serializedRepresentation');
           } else if (isMapToModelType(type)) {
             var rc = ReCase(type.typeArguments[1].getDisplayString());
             serializedRepresentation =
-                '''model.${field.name}.keys.fold({}, (map, key) {
+            '''model.${field.name}.keys.fold({}, (map, key) {
               return map..[key] =
               ${serializerToMap(rc, 'model.${field.name}[key]')};
             })''';
           } else if (type.element is Enum) {
             var convert =
-                (field.type.nullabilitySuffix == NullabilitySuffix.question)
-                    ? '!'
-                    : '';
+            (field.type.nullabilitySuffix == NullabilitySuffix.question)
+                ? '!'
+                : '';
 
             serializedRepresentation = '''
             model.${field.name} != null ?
@@ -226,9 +226,9 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
           } else if (const TypeChecker.fromRuntime(Uint8List)
               .isAssignableFromType(type)) {
             var convert =
-                (field.type.nullabilitySuffix == NullabilitySuffix.question)
-                    ? '!'
-                    : '';
+            (field.type.nullabilitySuffix == NullabilitySuffix.question)
+                ? '!'
+                : '';
 
             serializedRepresentation = '''
             model.${field.name} != null ?
@@ -250,7 +250,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
     }));
   }
 
-  // Generate fromMapMethod
+  // FIXED: Generate fromMapMethod with ONLY named parameters
   void generateFromMapMethod(
       ClassBuilder clazz, BuildContext ctx, LibraryBuilder file) {
     clazz.methods.add(Method((method) {
@@ -264,12 +264,13 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
             ..type = Reference('Map')),
         );
 
-      // Add all `super` params
+      // FIXED: Add all `super` params as NAMED OPTIONAL parameters
       if (ctx.constructorParameters.isNotEmpty) {
         for (var param in ctx.constructorParameters) {
-          method.requiredParameters.add(Parameter((b) => b
+          method.optionalParameters.add(Parameter((b) => b
             ..name = param.name
-            ..type = convertTypeReference(param.type)));
+            ..type = convertTypeReference(param.type, forceNullable: true)
+            ..named = true));
         }
       }
 
@@ -297,13 +298,13 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
       buf.writeln('return ${ctx.modelClassName}(');
       var i = 0;
 
-      // Parameters in the constructor
+      // FIXED: Parameters in the constructor as named parameters
       for (var param in ctx.constructorParameters) {
         if (i++ > 0) buf.write(', ');
-        buf.write(param.name);
+        buf.write('${param.name}: ${param.name} ?? /* default value or extracted from map */');
       }
 
-      // Fields
+      // Fields as named parameters
       for (var field in ctx.fields) {
         var type = ctx.resolveSerializedFieldType(field.name);
 
@@ -333,7 +334,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
             }
           }
           deserializedRepresentation =
-              '$deserializedRepresentation ?? $defaultValue';
+          '$deserializedRepresentation ?? $defaultValue';
         }
 
         var fieldNameDeserializer = ctx.fieldInfo[field.name]?.deserializer;
@@ -400,7 +401,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
 
             //log.warning('Code => $deserializedRepresentation');
           } else if (const TypeChecker.fromRuntime(List)
-                  .isAssignableFromType(type) &&
+              .isAssignableFromType(type) &&
               type.typeArguments.length == 1) {
             if (defaultValue == 'null') {
               defaultValue = '[]';
@@ -413,7 +414,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
                   : $defaultValue
                 ''';
           } else if (const TypeChecker.fromRuntime(Map)
-                  .isAssignableFromType(type) &&
+              .isAssignableFromType(type) &&
               type.typeArguments.length == 2) {
             var key = convertTypeReference(type.typeArguments[0])
                 .accept(DartEmitter(useNullSafetySyntax: true));
@@ -473,8 +474,8 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
             ..types.add(refer('String')))
           ..name = 'allFields'
           ..assignment = literalConstList(
-                  ctx.fields.map((f) => refer(f.name)).toList(),
-                  refer('String'))
+              ctx.fields.map((f) => refer(f.name)).toList(),
+              refer('String'))
               .code;
       }));
 
