@@ -361,13 +361,13 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
 
   void generateToJson(BuildContext? ctx, ClassBuilder clazz){
 
-    clazz.methods.add(Method (b){
-        // Add toJson method to the model class
+    clazz.methods.add(Method((b) {
+      // Add toJson method to the model class
       b
         ..name = 'toJson'
         ..returns = refer('Map<String, dynamic>')
-         ..body = Code('return ${clazz.name}Serializer.toMap(this);');
-      });
+        ..body = Code('return ${clazz.name}Serializer.toMap(this);');
+    }));
 
   }
 
