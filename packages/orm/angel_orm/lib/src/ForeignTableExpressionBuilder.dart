@@ -2,7 +2,7 @@ import 'builder.dart';
 import 'query.dart';
 
 
-class ForeignTableSqlExpressionBuilder<T> implements SqlExpressionBuilder {
+class ForeignTableSqlExpressionBuilder<T extends Query> implements SqlExpressionBuilder {
   final String tableName;
   final String foreignKey;
   final List<String> foreignTableColumns;
@@ -40,7 +40,7 @@ class ForeignTableSqlExpressionBuilder<T> implements SqlExpressionBuilder {
   @override
   bool get hasValue => tableName.isNotEmpty && foreignKey.isNotEmpty && foreignTableColumns.isNotEmpty;
 
-  @override
+@override
   T get query {
     return _querySource;
   }
