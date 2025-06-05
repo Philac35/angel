@@ -379,8 +379,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
 
       buf.write(');');
       method.body = Code(buf.toString());
-    }));
-  }
+    }
 
   void generateFieldsClass(BuildContext ctx, LibraryBuilder file) {
     file.body.add(Class((clazz) {
