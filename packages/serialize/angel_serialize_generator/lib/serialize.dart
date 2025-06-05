@@ -1,3 +1,5 @@
+
+
 part of 'angel3_serialize_generator.dart';
 
 class SerializerGenerator extends GeneratorForAnnotation<Serializable> {
@@ -126,7 +128,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
           ..name = param.name
           ..type = convertTypeReference(param.type)
           ..named = true
-          ..required = param.type.nullabilitySuffix != param.type.nullabilitySuffix.question));
+          ..required = param.type.nullabilitySuffix !=  NullabilitySuffix.question));
       }
 
       var currentClassFields = ctx.fields.where((field) =>
@@ -138,7 +140,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
           ..type = convertTypeReference(field.type)
           ..named = true
           ..toThis = true
-          ..required = field.type.nullabilitySuffix != field.type.nullabilitySuffix.question));
+          ..required = field.type.nullabilitySuffix !=  NullabilitySuffix.question));
       }
 
       var additionalParams = _getAdditionalConstructorParameters(ctx, allConstructorParams);
@@ -147,7 +149,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
           ..name = param.name
           ..type = convertTypeReference(param.type)
           ..named = true
-          ..required = param.type.nullabilitySuffix != param.type.nullabilitySuffix.question));
+          ..required = param.type.nullabilitySuffix != NullabilitySuffix.question));
       }
 
       if (inheritedParams.isNotEmpty || additionalParams.isNotEmpty) {
