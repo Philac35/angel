@@ -128,6 +128,7 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
       generateCopyWithMethod(ctx, clazz, file);
       generateEqualsOperator(ctx, clazz, file);
       generateHashCode(ctx, clazz);
+      generateToJson(ctx,clazz);
       generateToString(ctx, clazz);
 
       // Generate toJson() method if necessary
@@ -356,6 +357,20 @@ class JsonModelGenerator extends GeneratorForAnnotation<Serializable> {
             .statement;
     }));
   }
+
+
+  void generateToJson(BuildContext? ctx, ClassBuilder clazz){
+
+    clazz.methods.add(Method (b){
+        // Add toJson method to the model class
+      b
+        ..name = 'toJson'
+        ..returns = refer('Map<String, dynamic>')
+         ..body = Code('return ${clazz.name}Serializer.toMap(this);');
+      });
+
+  }
+
 
   void generateToString(BuildContext? ctx, ClassBuilder clazz) {
     clazz.methods.add(Method((b) {

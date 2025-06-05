@@ -293,17 +293,33 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
     }));
   }
 
-  void generateFromMapMethod(ClassBuilder clazz, BuildContext ctx, LibraryBuilder file) {
+/*  void generateFromMapMethod(ClassBuilder clazz, BuildContext ctx, LibraryBuilder file) {
     clazz.methods.add(Method((method) {
       method
         ..static = true
         ..name = 'fromMap'
-        ..returns = ctx.modelClassType
+        ..returns =  refer('${ctx.modelClassName}Model')
         ..requiredParameters.add(
           Parameter((b) => b
             ..name = 'map'
             ..type = Reference('Map')),
-        );
+        );*/
+
+      void generateFromMapMethod(ClassBuilder clazz, BuildContext ctx, LibraryBuilder file) {
+        // Create the fromMap method
+        final method = MethodBuilder()
+          ..static = true
+          ..name = 'fromMap'
+          ..returns = TypeReference((b) => b
+            ..symbol = '${ctx.modelClassName}Model')
+          ..requiredParameters.add(Parameter((b) => b
+            ..name = 'map'
+            ..type = TypeReference((b) => b
+              ..symbol = 'Map'
+              ..types.addAll([
+                TypeReference((b) => b..symbol = 'String'),
+                TypeReference((b) => b..symbol = 'dynamic')
+              ]))));   //End of change
 
       var allConstructorParams = _collectAllConstructorParameters(ctx);
 

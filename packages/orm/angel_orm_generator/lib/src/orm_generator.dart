@@ -129,6 +129,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         }));
       }
 
+      generateToJson(ctx,clazz);
+
       // Constructor - FIXED: Assign to nullable field manually
       b.constructors.add(Constructor((cb) {
         cb.requiredParameters.add(Parameter((p) {
@@ -149,7 +151,31 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           };
         ''');
       }));
+
+      // Add values getter
+      b.methods.add(Method((method) {
+        method
+          ..name = 'values'
+          ..returns = TypeReference((b) => b
+            ..symbol = 'List'
+            ..types.add(refer('dynamic')))
+          ..type = MethodType.getter
+          ..body = Code('return _values;');
+      }));
+
+      // Add where getter
+      b.methods.add(Method((method) {
+        method
+          ..name = 'where'
+          ..returns = TypeReference((b) => b
+            ..symbol = 'Map'
+            ..types.addAll([refer('String'), refer('dynamic')]))
+          ..type = MethodType.getter
+          ..body = Code('return _where;');
+      }));
     }));
+
+
 
     // Generate the QueryWhere class
     lib.body.add(Class((b) {
@@ -255,6 +281,16 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     classBuilder.methods.add(copyWithMethod.build());
 
+
+    // Add toJson method to the model class
+      var  toJsonMethod= MethodBuilder()
+          ..name = 'toJson'
+          ..returns = refer('Map<String, dynamic>')
+          ..body = Code('return ${modelClassName}Serializer.toMap(this);');
+
+
+
+
     // Add toString method
     var toStringMethod = MethodBuilder()
       ..name = 'toString'
@@ -275,6 +311,9 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     lib.body.add(classBuilder.build());
   }
+
+
+
 
   void generateQueryMethods(ClassBuilder b, String className, ClassElement element,
       List<String> fieldNames, String tableNameStr) {

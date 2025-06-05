@@ -14,6 +14,7 @@ import 'package:code_builder/code_builder.dart';
 import 'package:path/path.dart' as p;
 import 'package:recase/recase.dart';
 import 'package:source_gen/source_gen.dart' hide LibraryBuilder;
+import 'package:code_builder/code_builder.dart';
 
 import 'build_context.dart';
 import 'context.dart';
