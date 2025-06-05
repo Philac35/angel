@@ -129,7 +129,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         }));
       }
 
-      generateToJson(ctx,clazz);
+
 
       // Constructor - FIXED: Assign to nullable field manually
       b.constructors.add(Constructor((cb) {
