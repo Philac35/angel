@@ -176,7 +176,7 @@ class ${pascal}Decoder extends Converter<Map, $pascal> {
     clazz.methods.add(Method((method) {
       method
         ..name = 'copyWith'
-        ..returns = ctx.modelClassType;
+        ..returns = refer('${ctx.modelClassType}Model');
 
       var allConstructorParams = _collectAllConstructorParameters(ctx);
       var inheritedParams = _getInheritedParameters(ctx, allConstructorParams);
