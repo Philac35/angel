@@ -167,7 +167,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         mb.body = Code('return ${className}QueryValues(query);');
       }));
 
-// Add values getter
+      // Add values getter
       b.methods.add(Method((method) {
         method
           ..name = 'values'
@@ -184,6 +184,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..type = MethodType.getter
           ..body = Code('return where_();');
       }));
+
+    }));
 
 
 
