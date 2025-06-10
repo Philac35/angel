@@ -188,8 +188,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
             ..types.addAll([refer('String'), refer('dynamic')]))
           ..type = MethodType.getter
           ..body = Code('return _where;');
-      }));
-    }));*/
+      }));*/
+    }));
 
 
 
