@@ -247,10 +247,12 @@ Future<BuildContext?> buildContext(
     chosenConstruct = clazz.constructors.firstWhere(
           (c) => c.name == 'fromJson',
       orElse: () => clazz.constructors.first,
-    );
+    );} else {
+    chosenConstruct = null;
+  }
 
 
-    if (chosenConstruct != null) {
+  if (chosenConstruct != null) {
 
       //Deduplicate parameters  by name (and warn on type conflict)
       for (final param in chosenConstruct.parameters) {
@@ -272,7 +274,7 @@ Future<BuildContext?> buildContext(
 
 
   return ctx;
-}}
+}
 
 /// A manually-instantiated [FieldElement].
 class ShimFieldImpl extends FieldElementImpl {
