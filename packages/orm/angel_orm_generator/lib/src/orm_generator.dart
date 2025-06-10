@@ -268,6 +268,18 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     classBuilder.constructors.add(constructor.build());
 
+  //Debug CopyWith
+    final seen = <String>{};
+    final copyWithFields =<FieldElement>[];
+
+    for (final field in nonStaticFields) {
+      if (!seen.contains(field.name)) {
+        seen.add(field.name);
+        copyWithFields.add(field);
+      }
+    }
+    print('Generating copyWith for $modelClassName: ${copyWithFields.map((f) => f.name).join(', ')}');
+
     // Add copyWith method with named parameters
     var copyWithMethod = MethodBuilder()
       ..name = 'copyWith'
