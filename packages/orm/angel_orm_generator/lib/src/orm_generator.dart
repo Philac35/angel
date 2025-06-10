@@ -155,14 +155,14 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
 
       b.methods.add(Method((mb) {
-        mb.name = 'where';
+        mb.name = 'where_';
         mb.returns = refer('${className}QueryWhere');
         mb.annotations.add(refer('override'));
         mb.body = Code('return ${className}QueryWhere(query);');
       }));
 
       b.methods.add(Method((mb) {
-        mb.name = 'values';
+        mb.name = 'values_';
         mb.returns = refer('${className}QueryValues');
         mb.annotations.add(refer('override'));
         mb.body = Code('return ${className}QueryValues(query);');
@@ -174,7 +174,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..name = 'values'
           ..returns = TypeReference((b) => b
             ..symbol = 'List'
-            ..types.add(refer('dynamic')))
+            ..types.add( refer('${className}QueryValues')))
           ..type = MethodType.getter
           ..body = Code('return values_();');
       }));
@@ -185,7 +185,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..name = 'where'
           ..returns = TypeReference((b) => b
             ..symbol = 'Map'
-            ..types.addAll([refer('String'), refer('dynamic')]))
+            ..types.add( refer('${className}QueryWhere')))
           ..type = MethodType.getter
           ..body = Code('return where_();');
       }));
