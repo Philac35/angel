@@ -153,6 +153,19 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
 
 
+      // toMap method
+      b.methods.add(Method((mb) {
+        mb.name = 'toJson';
+        mb.returns = refer('Map<String, dynamic>');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('''
+          return {
+           '${className}Serializer.toMap()'
+           };
+        ''');
+      }));
+
+
       //Function
       b.methods.add(Method((mb) {
         mb.name = 'where_';
