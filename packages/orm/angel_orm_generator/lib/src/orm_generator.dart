@@ -152,7 +152,23 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         ''');
       }));
 
+
       // Add values getter
+      b.methods.add(Method((mb) {
+        mb.name = 'where';
+        mb.returns = refer('${className}QueryWhere');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('return ${className}QueryWhere(query);');
+      }));
+
+      b.methods.add(Method((mb) {
+        mb.name = 'values';
+        mb.returns = refer('${className}QueryValues');
+        mb.annotations.add(refer('override'));
+        mb.body = Code('return ${className}QueryValues(query);');
+      }));
+
+      /*// Add values getter
       b.methods.add(Method((method) {
         method
           ..name = 'values'
@@ -173,7 +189,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..type = MethodType.getter
           ..body = Code('return _where;');
       }));
-    }));
+    }));*/
 
 
 
