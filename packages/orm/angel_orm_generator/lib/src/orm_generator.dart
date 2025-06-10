@@ -153,21 +153,22 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
 
 
+      //Function
       b.methods.add(Method((mb) {
         mb.name = 'where_';
         mb.returns = refer('${className}QueryWhere');
         mb.annotations.add(refer('override'));
-        mb.body = Code('return ${className}QueryWhere(query);');
+        mb.body = Code('return ${className}QueryWhere(query!);');
       }));
 
       b.methods.add(Method((mb) {
         mb.name = 'values_';
         mb.returns = refer('${className}QueryValues');
         mb.annotations.add(refer('override'));
-        mb.body = Code('return ${className}QueryValues(query);');
+        mb.body = Code('return ${className}QueryValues(query!);');
       }));
 
-      // Add values getter
+      // Add values getter of previous functions
       b.methods.add(Method((method) {
         method
           ..name = 'values'
@@ -176,7 +177,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..body = Code('return values_();');
       }));
 
-// Add where getter
+      // Add where getter
       b.methods.add(Method((method) {
         method
           ..name = 'where'
