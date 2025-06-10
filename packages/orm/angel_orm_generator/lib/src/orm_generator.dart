@@ -314,7 +314,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           ..name = 'toJson'
           ..annotations.add(refer('override'))
           ..returns = refer('Map<String, dynamic>')
-          ..body = Code('return ${modelClassName}Serializer.toMap(this);');
+          ..body = Code('return ${replaceLastWord(modelClassName,"Model", "")}Serializer.toMap(this);');
 
 
 
@@ -342,7 +342,11 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   }
 
 
-
+  String replaceLastWord(String source, String word, String replacement) {
+    // \b is a word boundary, $ is end of string, (?s) makes . match newlines
+    final regExp = RegExp(r'\b' + RegExp.escape(word) + r'\b(?!.*\b' + RegExp.escape(word) + r'\b)', dotAll: true);
+    return source.replaceFirst(regExp, replacement);
+  }
 
   void generateQueryMethods(ClassBuilder b, String className, ClassElement element,
       List<String> fieldNames, String tableNameStr) {
