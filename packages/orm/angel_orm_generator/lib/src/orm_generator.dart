@@ -153,17 +153,6 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
 
 
-      // toMap method
-      b.methods.add(Method((mb) {
-        mb.name = 'toJson';
-        mb.returns = refer('Map<String, dynamic>');
-        mb.annotations.add(refer('override'));
-        mb.body = Code('''
-          return {
-           '${className}Serializer.toMap()'
-           };
-        ''');
-      }));
 
 
       //Function
@@ -323,6 +312,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     // Add toJson method to the model class
       var  toJsonMethod= MethodBuilder()
           ..name = 'toJson'
+          ..annotations.add(refer('override'))
           ..returns = refer('Map<String, dynamic>')
           ..body = Code('return ${modelClassName}Serializer.toMap(this);');
 
@@ -345,8 +335,9 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       toStringMethod.body = Code("return '$modelClassName()';");
     }
 
-    classBuilder.methods.add(toStringMethod.build());
 
+    classBuilder.methods.add(toStringMethod.build());
+    classBuilder.methods.add(toJsonMethod.build());
     lib.body.add(classBuilder.build());
   }
 
