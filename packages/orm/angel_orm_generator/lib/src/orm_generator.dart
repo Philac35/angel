@@ -153,7 +153,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
 
 
-      // Add values getter
+
       b.methods.add(Method((mb) {
         mb.name = 'where';
         mb.returns = refer('${className}QueryWhere');
@@ -168,7 +168,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         mb.body = Code('return ${className}QueryValues(query);');
       }));
 
-      /*// Add values getter
+      // Add values getter
       b.methods.add(Method((method) {
         method
           ..name = 'values'
@@ -176,7 +176,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
             ..symbol = 'List'
             ..types.add(refer('dynamic')))
           ..type = MethodType.getter
-          ..body = Code('return _values;');
+          ..body = Code('return values_();');
       }));
 
       // Add where getter
@@ -187,8 +187,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
             ..symbol = 'Map'
             ..types.addAll([refer('String'), refer('dynamic')]))
           ..type = MethodType.getter
-          ..body = Code('return _where;');
-      }));*/
+          ..body = Code('return where_();');
+      }));
     }));
 
 
