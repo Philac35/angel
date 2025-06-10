@@ -238,23 +238,39 @@ Future<BuildContext?> buildContext(
   }
 
   final paramSet=  <String, String>{};
+  ConstructorElement? chosenConstruct;
   // Get constructor params, if any
   if (clazz.unnamedConstructor != null) {
-    ctx.constructorParameters.addAll(clazz.unnamedConstructor!.parameters);
-  } else {
-    for (final ctor in clazz.constructors.where((c) => c.name.isNotEmpty)) {
-      for (final param in ctor.parameters) {
-      final typeStr = param.type.getDisplayString(withNullability: true);
-      if (!paramSet.containsKey(param.name)) {
-        paramSet[param.name] = typeStr;
-        ctx.constructorParameters.add(param);
-      } else if (paramSet[param.name] != typeStr) {
-        print('Warning: Serializer, build_context.dart : Parameter "${param.name}" has conflicting types: '
-            '${paramSet[param.name]} vs $typeStr');
-        // Handle conflict if needed
+    chosenConstruct= clazz.unnamedConstructor;
+  } else if (clazz.constructors.isNotEmpty) {
+    // Pick the first named constructor, or pick by name (e.g., 'fromJson')
+    chosenConstruct = clazz.constructors.firstWhere(
+          (c) => c.name == 'fromJson',
+      orElse: () => clazz.constructors.first,
+    );
+
+
+    if (chosenConstruct != null) {
+
+      //Deduplicate parameters  by name (and warn on type conflict)
+      for (final param in chosenConstruct.parameters) {
+        final typeStr = param.type.getDisplayString(withNullability: true);
+        if (!paramSet.containsKey(param.name)) {
+          paramSet[param.name] = typeStr;
+          ctx.constructorParameters.add(param);
+        } else if (paramSet[param.name] != typeStr) {
+          print('Warning: Parameter "${param.name}" has conflicting types: '
+              '${paramSet[param.name]} vs $typeStr');
+          // Optionally handle the conflict here (e.g., skip, throw, etc.)
+        }
       }
+
+      } else {
+      print('Warning: No usable constructor found for ${clazz.name}.');
     }
-  }
+
+
+
   return ctx;
 }}
 
