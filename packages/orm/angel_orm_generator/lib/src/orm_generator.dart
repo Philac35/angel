@@ -367,8 +367,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         p.type = refer('QueryExecutor');
       }));
       mb.body = Code('''
-        return super.get(executor).then((rows) {
-          return rows.map((row) => deserialize$className(row))
+        return super.get(executor).then((rows) { 
+          return rows.map((row) => deserialize$className(row as List))
               .where((x) => x != null)
               .cast<$className>()
               .toList();
