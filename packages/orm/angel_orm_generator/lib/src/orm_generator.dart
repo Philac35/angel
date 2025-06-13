@@ -164,7 +164,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           };
         ''');
       }));
-
+    }));
 
       // Generate the QueryWhere class
       lib.body.add(Class((b) {
