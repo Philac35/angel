@@ -250,8 +250,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     final isNullable = field.type.nullabilitySuffix == NullabilitySuffix.question;
     final isRequired = !isNullable; // You may want more logic here if you have metadata
 
-    }
-    return Parameter((p) {
+       return Parameter((p) {
        p.name = field.name;
        p.type = refer(field.type.getDisplayString(withNullability: true));
         p.named = true;
