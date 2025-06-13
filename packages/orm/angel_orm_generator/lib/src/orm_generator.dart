@@ -227,13 +227,17 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     if (!isStatic && !isFinal && !isInConstructor) {
     // Only here do we generate a 'late' field (and we do NOT declare it as final)
-     classBuilder.fields.add(
+
+      classBuilder.fields.add(
         Field((f) => f
-         ..name = field.name
-         ..type = refer(field.type.getDisplayString(withNullability: true))
-         ..modifier = FieldModifier.late
-         ),
-     );
+          ..name = field.name
+          ..type = refer(field.type.getDisplayString(withNullability: true))
+          ..modifier = FieldModifier.var$
+          ..late = true
+        ),
+      );
+
+
     }
     }
 
