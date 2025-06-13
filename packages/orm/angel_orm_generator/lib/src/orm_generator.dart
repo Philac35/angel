@@ -17,9 +17,7 @@ import 'package:inflection3/inflection3.dart';
 import 'package:recase/recase.dart';
 import 'package:source_gen/source_gen.dart';
 import 'package:angel3_serialize_generator/angel3_serialize_generator.dart';
-
 import 'package:code_builder/code_builder.dart' as libuilder;
-
 import 'package:pub_semver/pub_semver.dart';
 import 'orm_build_context.dart';
 
@@ -93,7 +91,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     // Get non-static fields
     var regularFields = element.fields.where((f) => !f.isStatic).toList();
-    var fieldNames = regularFields.map((f) => {f.name}).toList();
+    var fieldNames = regularFields.map((f) => f.name).toList();
+
     var tableName = pluralize(className.toLowerCase());
 
     // Generate the Model class (for serialization compatibility)
