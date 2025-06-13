@@ -6,3 +6,7 @@ environment:
 dependencies:
   melos: ^6.3.0
   pub_semver: ^2.2.0
+  analyzer: ^7.4.5
+
+dev_dependencies:
+  code_builder: ^4.10.1
