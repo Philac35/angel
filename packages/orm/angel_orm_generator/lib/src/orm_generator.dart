@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/element2.dart';
 import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:angel3_model/angel3_model.dart';
@@ -139,6 +140,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
           fb.name = field.name;
 
           fb.type = refer(field.type.getDisplayString(withNullability: true));
+
         }));
       }
 
@@ -170,12 +172,24 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         b.name = whereClassName;
         b.extend = refer('QueryWhere');
 
-        // Add the field
-        b.fields.add(Field((fb) {
-          fb.name = 'query';
-          fb.type = refer(queryClassName);
-          fb.modifier = FieldModifier.var$;
-        }));
+
+
+        // Add the fields
+        for (final field in regularFields) {
+          b.fields.add(Field((fb) {
+            fb.name = field.name;
+            fb.type = refer(field.type.getDisplayString(withNullability: true));
+            fb.modifier = FieldModifier.var$;
+            if (shouldBeLate(field as FieldElement2)) {
+              fb.late = true;
+            }
+          }));
+        }
+
+
+        ));
+
+
 
         // Constructor - FIXED: Use positional parameter
         b.constructors.add(Constructor((cb) {
@@ -612,5 +626,20 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
   }
 
+  //Helper to Check define the type and modifiers
+  bool isOptional(Field field) {
+    final typeString = field.type?.symbol ?? '';
+    return typeString.endsWith('?');
+  }
+
+
+  bool shouldBeLate(FieldElement2 field, {bool isInConstructor=false}) {
+    final isStatic = field.isStatic;
+    final isFinal = field.isFinal;
+    final isOptional = field.type.nullabilitySuffix == NullabilitySuffix.question;
+    // isInConstructor: you need to provide this info from your logic
+
+    return !isStatic && !isFinal && !isInConstructor && !isOptional;
+  }
 
 }
