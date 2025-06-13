@@ -36,11 +36,9 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   Angel3OrmGenerator([this.builderOptions = const BuilderOptions({})]);
 
   @override
-  Future<String> generateForAnnotatedElement(
-      Element element,
+  Future<String> generateForAnnotatedElement(Element element,
       ConstantReader annotation,
-      BuildStep buildStep,
-      ) async {
+      BuildStep buildStep,) async {
     if (element is! ClassElement) {
       throw InvalidGenerationSourceError(
         '@Orm() can only be applied to classes.',
@@ -63,7 +61,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     lib.accept(emitter, buf);
 
     try {
-      return DartFormatter(languageVersion: Version.parse('3.7.2')).format(buf.toString());
+      return DartFormatter(languageVersion: Version.parse('3.7.2')).format(
+          buf.toString());
     } catch (e) {
       print('Failed to format generated code:');
       print(buf.toString());
@@ -71,7 +70,21 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }
   }
 
-  void generateOrmCode(ClassElement element, ConstantReader annotation, libuilder.LibraryBuilder lib) {
+  //Helper function
+  String pluralize(String word) {
+    if (word.endsWith('y')) {
+      return '${word.substring(0, word.length - 1)}ies';
+    } else
+    if (word.endsWith('s') || word.endsWith('sh') || word.endsWith('ch') ||
+        word.endsWith('x') || word.endsWith('z')) {
+      return '${word}es';
+    } else {
+      return '${word}s';
+    }
+  }
+
+  void generateOrmCode(ClassElement element, ConstantReader annotation,
+      libuilder.LibraryBuilder lib) {
     var className = element.name;
     var modelClassName = '${className}Model';
     var queryClassName = '${className}Query';
@@ -80,7 +93,7 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     // Get non-static fields
     var regularFields = element.fields.where((f) => !f.isStatic).toList();
-    var fieldNames = regularFields.map((f) => f.name).toList();
+    var fieldNames = regularFields.map((f) => {f.name}).toList();
     var tableName = pluralize(className.toLowerCase());
 
     // Generate the Model class (for serialization compatibility)
@@ -125,10 +138,10 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       for (final field in regularFields) {
         b.fields.add(Field((fb) {
           fb.name = field.name;
+
           fb.type = refer(field.type.getDisplayString(withNullability: true));
         }));
       }
-
 
 
       // Constructor - FIXED: Assign to nullable field manually
@@ -153,130 +166,120 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }));
 
 
+      // Generate the QueryWhere class
+      lib.body.add(Class((b) {
+        b.name = whereClassName;
+        b.extend = refer('QueryWhere');
 
-
-      //Function
-      b.methods.add(Method((mb) {
-        mb.name = 'where_';
-        mb.returns = refer('${className}QueryWhere');
-        mb.annotations.add(refer('override'));
-        mb.body = Code('return ${className}QueryWhere(query!);');
-      }));
-
-      b.methods.add(Method((mb) {
-        mb.name = 'values_';
-        mb.returns = refer('${className}QueryValues');
-        mb.annotations.add(refer('override'));
-        mb.body = Code('return ${className}QueryValues(query!);');
-      }));
-
-      // Add values getter of previous functions
-      b.methods.add(Method((method) {
-        method
-          ..name = 'values'
-          ..returns = refer('${className}QueryValues')
-          ..type = MethodType.getter
-          ..body = Code('return values_();');
-      }));
-
-      // Add where getter
-      b.methods.add(Method((method) {
-        method
-          ..name = 'where'
-          ..returns = refer('${className}QueryWhere')
-          ..type = MethodType.getter
-          ..body = Code('return where_();');
-      }));
-
-    }));
-
-
-
-    // Generate the QueryWhere class
-    lib.body.add(Class((b) {
-      b.name = whereClassName;
-      b.extend = refer('QueryWhere');
-
-      // Add the field
-      b.fields.add(Field((fb) {
-        fb.name = 'query';
-        fb.type = refer(queryClassName);
-        fb.modifier = FieldModifier.var$;
-      }));
-
-      // Constructor - FIXED: Use positional parameter
-      b.constructors.add(Constructor((cb) {
-        cb.requiredParameters.add(Parameter((p) {
-          p.name = 'query';
-          p.type = refer(queryClassName);
+        // Add the field
+        b.fields.add(Field((fb) {
+          fb.name = 'query';
+          fb.type = refer(queryClassName);
+          fb.modifier = FieldModifier.var$;
         }));
-        cb.initializers.add(Code('this.query = query'));
+
+        // Constructor - FIXED: Use positional parameter
+        b.constructors.add(Constructor((cb) {
+          cb.requiredParameters.add(Parameter((p) {
+            p.name = 'query';
+            p.type = refer(queryClassName);
+          }));
+          cb.initializers.add(Code('this.query = query'));
+        }));
+
+        b.methods.add(Method((mb) {
+          mb.name = 'where';
+          mb.returns = refer('${className}QueryWhere');
+          mb.annotations.add(refer('override'));
+          mb.body = Code('return ${className}QueryWhere(query);');
+        }));
+
+        b.methods.add(Method((mb) {
+          mb.name = 'values';
+          mb.returns = refer('${className}QueryValues');
+          mb.annotations.add(refer('override'));
+          mb.body = Code('return ${className}QueryValues(query);');
+        }));
+
+        // Generate where fields
+        generateWhereFields(b, element);
       }));
 
-      b.methods.add(Method((mb) {
-        mb.name = 'where';
-        mb.returns = refer('${className}QueryWhere');
-        mb.annotations.add(refer('override'));
-        mb.body = Code('return ${className}QueryWhere(query);');
-      }));
+      // FIXED: Generate missing parseRow and deserialize functions
+      generateParseRowFunction(lib, modelClassName, regularFields);
+      generateDeserializeFunction(lib, modelClassName);
+    }
 
-      b.methods.add(Method((mb) {
-        mb.name = 'values';
-        mb.returns = refer('${className}QueryValues');
-        mb.annotations.add(refer('override'));
-        mb.body = Code('return ${className}QueryValues(query);');
-      }));
-
-      // Generate where fields
-      generateWhereFields(b, element);
-    }));
-
-    // FIXED: Generate missing parseRow and deserialize functions
-    generateParseRowFunction(lib, modelClassName, regularFields);
-    generateDeserializeFunction(lib, modelClassName);
-  }
-
-  void generateModelClass(libuilder.LibraryBuilder lib, String modelClassName, ClassElement element) {
+        void generateModelClass(libuilder.LibraryBuilder lib, String
+        modelClassName, ClassElement element) {
     var classBuilder = ClassBuilder()
-      ..name = modelClassName
-      ..extend = refer(element.name);
+    ..name = modelClassName
+    ..extend = refer(element.name);
 
     // Get non-static fields
     var nonStaticFields = element.fields.where((f) => !f.isStatic).toList();
+
+
+    //Add Fields
+    for (final field in element.fields) {
+    final isFinal = field.isFinal; // Checks if the original field is 'final'
+    final isStatic = field.isStatic;
+    final isInConstructor = nonStaticFields.any((f) => f.name == field.name);
+
+    if (!isStatic && !isFinal && !isInConstructor) {
+    // Only here do we generate a 'late' field (and we do NOT declare it as final)
+     classBuilder.fields.add(
+        Field((f) => f
+         ..name = field.name
+         ..type = refer(field.type.getDisplayString(withNullability: true))
+         ..modifier = FieldModifier.late
+         ),
+     );
+    }
+    }
+
 
     // Constructor - FIXED: Use named parameters to match parent class
     var constructor = ConstructorBuilder();
 
     // Add named parameters
     constructor.optionalParameters.addAll(
-      nonStaticFields.map((field) {
-        return Parameter((p) {
-          p.name = field.name;
-          p.type = refer(field.type.getDisplayString(withNullability: true));
-          p.named = true;
-        });
-      }),
+
+
+    nonStaticFields.map((field) {
+    final isNullable = field.type.nullabilitySuffix == NullabilitySuffix.question;
+    final isRequired = !isNullable; // You may want more logic here if you have metadata
+
+    }
+    return Parameter((p) {
+       p.name = field.name;
+       p.type = refer(field.type.getDisplayString(withNullability: true));
+        p.named = true;
+        if (!isNullable) p.required = true;
+      });
+    }),
     );
 
     // Super constructor call with named parameters
     if (nonStaticFields.isNotEmpty) {
-      var superArgs = nonStaticFields
-          .map((field) => '${field.name}: ${field.name}')
-          .join(', ');
-      constructor.initializers.add(Code('super($superArgs)'));
+    var superArgs = nonStaticFields
+        .map((field) => '${field.name}: ${field.name}')
+        .join(', ');
+    constructor.initializers.add(Code('super($superArgs)'));
     } else {
-      constructor.initializers.add(Code('super()'));
+    constructor.initializers.add(Code('super()'));
     }
 
     classBuilder.constructors.add(constructor.build());
 
-  //Debug CopyWith
+
+    //Debug CopyWith
     final seen = <String>{};
     final copyWithFields =<FieldElement>[];
 
     for (final field in nonStaticFields) {
-      if (!seen.contains(field.name)) {
-        seen.add(field.name);
+     if (!seen.contains(field.name)) {
+       seen.add(field.name);
         copyWithFields.add(field);
       }
     }
@@ -284,65 +287,65 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
 
     // Add copyWith method with named parameters
     var copyWithMethod = MethodBuilder()
-      ..name = 'copyWith'
-      ..returns = refer(modelClassName)
-      ..optionalParameters.addAll(
-        nonStaticFields.map((field) {
-          return Parameter((p) {
-            p.name = field.name;
-            p.type = refer(field.type.getDisplayString(withNullability: true));
-            p.named = true;
-          });
-        }),
-      );
+    ..name = 'copyWith'
+    ..returns = refer(modelClassName)
+    ..optionalParameters.addAll(
+    nonStaticFields.map((field) {
+      return Parameter((p) {
+         p.name = field.name;
+         p.type = refer(field.type.getDisplayString(withNullability: true));
+         p.named = true;
+
+       });
+     }),
+    );
 
     if (nonStaticFields.isNotEmpty) {
-      var copyWithArgs = nonStaticFields
-          .map((field) => '${field.name}: ${field.name} ?? this.${field.name}')
-          .join(', ');
+    var copyWithArgs = nonStaticFields
+        .map((field) => '${field.name}: ${field.name} ?? this.${field.name}')
+        .join(', ');
 
-      copyWithMethod.body = Code('return $modelClassName($copyWithArgs);');
+    copyWithMethod.body = Code('return $modelClassName($copyWithArgs);');
     } else {
-      copyWithMethod.body = Code('return $modelClassName();');
+    copyWithMethod.body = Code('return $modelClassName();');
     }
 
     classBuilder.methods.add(copyWithMethod.build());
 
 
     // Add toJson method to the model class
-      var  toJsonMethod= MethodBuilder()
-          ..name = 'toJson'
-          ..annotations.add(refer('override'))
-          ..returns = refer('Map<String, dynamic>')
-          ..body = Code('return ${modelClassName.replaceRange(modelClassName.lastIndexOf('Model'),modelClassName.length, "")}Serializer.toMap(this);');
-
-
+    var toJsonMethod= MethodBuilder()
+    ..name = 'toJson'
+    ..annotations.add(refer('override'))
+    ..returns = refer('Map<String, dynamic>')
+    ..body = Code('return ${modelClassName.replaceRange(modelClassName.lastIndexOf('Model'),modelClassName.length, "")}Serializer.toMap(this);');
 
 
     // Add toString method
     var toStringMethod = MethodBuilder()
-      ..name = 'toString'
-      ..returns = refer('String')
-      ..annotations.add(refer('override'));
+    ..name = 'toString'
+    ..returns = refer('String')
+    ..annotations.add(refer('override'));
 
     if (nonStaticFields.isNotEmpty) {
-      var toStringFields = nonStaticFields
-          .map((field) => '${field.name}: \$${field.name}')
-          .join(', ');
+    var toStringFields = nonStaticFields
+        .map((field) => '${field.name}: \$${field.name}')
+        .join(', ');
 
-      toStringMethod.body = Code("return '$modelClassName($toStringFields)';");
+    toStringMethod.body = Code("return '$modelClassName($toStringFields)';");
     } else {
-      toStringMethod.body = Code("return '$modelClassName()';");
+    toStringMethod.body = Code("return '$modelClassName()';");
     }
 
 
     classBuilder.methods.add(toStringMethod.build());
     classBuilder.methods.add(toJsonMethod.build());
     lib.body.add(classBuilder.build());
-  }
+    }
 
 
-  void generateQueryMethods(ClassBuilder b, String className, ClassElement element,
+  void generateQueryMethods(ClassBuilder b, String className,
+      ClassElement element,
       List<String> fieldNames, String tableNameStr) {
     var whereClassName = '${className.replaceFirst('Model', '')}QueryWhere';
     var valuesClassName = '${className.replaceFirst('Model', '')}QueryValues';
@@ -394,7 +397,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         p.type = refer('List<dynamic>');
       }));
       mb.annotations.add(refer('override'));
-      mb.body = Code('return Optional.ofNullable(${className.toLowerCase()}ParseRow(row));');
+      mb.body = Code('return Optional.ofNullable(${className
+          .toLowerCase()}ParseRow(row));');
     }));
 
     // FIXED: Use getters instead of methods to avoid conflicts
@@ -462,7 +466,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
       }
 
       // Check if this is a relation field (foreign key)
-      var fieldElement = nonStaticFields.firstWhere((f) => f.type == fieldType, orElse: () => throw StateError('Field not found'));
+      var fieldElement = nonStaticFields.firstWhere((f) => f.type == fieldType,
+          orElse: () => throw StateError('Field not found'));
       if (isRelationField(fieldElement)) {
         // For relation fields, skip them or use a generic builder
         return null; // We'll handle this in the expressions generation
@@ -524,7 +529,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   }
 
   // FIXED: Generate parseRow function (moved from inside generateWhereFields)
-  void generateParseRowFunction(libuilder.LibraryBuilder lib, String className, List<FieldElement> fields) {
+  void generateParseRowFunction(libuilder.LibraryBuilder lib, String className,
+      List<FieldElement> fields) {
     lib.body.add(Method((mb) {
       mb.name = '${className.toLowerCase()}ParseRow';
       mb.returns = refer('$className?');
@@ -550,17 +556,23 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
         }
 
         if (fieldType.isDartCoreString) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as String? : null;');
+          bodyCode.writeln(
+              '  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as String? : null;');
         } else if (fieldType.isDartCoreInt) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as int? : null;');
+          bodyCode.writeln(
+              '  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as int? : null;');
         } else if (fieldType.isDartCoreDouble) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as double? : null;');
+          bodyCode.writeln(
+              '  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as double? : null;');
         } else if (fieldType.isDartCoreBool) {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as bool? : null;');
+          bodyCode.writeln(
+              '  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] as bool? : null;');
         } else if (fieldType.element?.name == 'DateTime') {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex && row[$fieldIndex] != null ? DateTime.parse(row[$fieldIndex].toString()) : null;');
+          bodyCode.writeln(
+              '  var $fieldName = row.length > $fieldIndex && row[$fieldIndex] != null ? DateTime.parse(row[$fieldIndex].toString()) : null;');
         } else {
-          bodyCode.writeln('  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] : null;');
+          bodyCode.writeln(
+              '  var $fieldName = row.length > $fieldIndex ? row[$fieldIndex] : null;');
         }
 
         constructorArgs.add('$fieldName: $fieldName');
@@ -585,7 +597,8 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
   }
 
   // FIXED: Generate deserialize function (moved from inside generateWhereFields)
-  void generateDeserializeFunction(libuilder.LibraryBuilder lib, String className) {
+  void generateDeserializeFunction(libuilder.LibraryBuilder lib,
+      String className) {
     lib.body.add(Method((mb) {
       mb.name = 'deserialize$className';
       mb.returns = refer('$className?');
@@ -597,13 +610,5 @@ class Angel3OrmGenerator extends GeneratorForAnnotation<Orm> {
     }));
   }
 
-  String pluralize(String word) {
-    if (word.endsWith('y')) {
-      return '${word.substring(0, word.length - 1)}ies';
-    } else if (word.endsWith('s') || word.endsWith('sh') || word.endsWith('ch') || word.endsWith('x') || word.endsWith('z')) {
-      return '${word}es';
-    } else {
-      return '${word}s';
-    }
-  }
+
 }
